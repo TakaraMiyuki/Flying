@@ -1,7 +1,7 @@
 package com.example.examplemod;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 import net.minecraft.core.Direction;
@@ -43,18 +43,23 @@ public final class FlyingEnchant {
     public static final ResourceKey<Enchantment> WIND_BURST_KEY =
         ResourceKey.create(Registries.ENCHANTMENT, Identifier.withDefaultNamespace("wind_burst"));
 
-    /** 突进水平初速：一级 ≈2 格、二级 ≈3 格（空中阻力 0.91/刻，前约 10 刻的滑行位移）。 */
-    public static final double DASH_SPEED_BASE = 0.30;
+    /** 突进水平初速：一级 ≈3 格、二级 ≈4 格（空中阻力 0.91/刻，前约 10 刻的滑行位移）。 */
+    public static final double DASH_SPEED_BASE = 0.44;
     public static final double DASH_SPEED_PER_LEVEL = 0.15;
-    /** 突进向上初速：约抬高 0.5 格。 */
-    public static final double DASH_UP = 0.24;
+    /** 突进向上初速：一级约抬高 0.5 格、二级约 1 格。 */
+    public static final double DASH_UP_BASE = 0.24;
+    public static final double DASH_UP_PER_LEVEL = 0.13;
     /** 每次突进消耗的饥饿值（点）。 */
     public static final int DASH_HUNGER_COST = 2;
     /** 疾跑所需饱食度阈值（须严格大于才可突进）。 */
     public static final int SPRINT_FOOD_THRESHOLD = 6;
 
-    /** 本次腾空已突进过的玩家，落地时清除（见 {@link #onPlayerTick}）。 */
-    private static final Set<UUID> DASHED_THIS_FLIGHT = new HashSet<>();
+    /**
+     * 每位玩家上次突进时的爆炸命中锚点（ServerPlayer.currentExplosionImpactPos）。
+     * 锚点变化 = 发生了新一轮风爆弹跳 = 突进资格刷新；同一次弹跳内锚点不变，突进只允许一次。
+     * 落地时清除（见 {@link #onPlayerTick}）；星月爆发跃起时由 {@link #clearDashState} 主动清除。
+     */
+    private static final Map<UUID, Vec3> LAST_DASH_IMPACT = new HashMap<>();
 
     private FlyingEnchant() {
     }
@@ -66,12 +71,17 @@ public final class FlyingEnchant {
             (payload, context) -> handleDashRequest(context.player()));
     }
 
-    // 游戏总线：玩家落地即恢复突进资格
+    // 游戏总线：玩家落地即清除突进状态（新的腾空窗口由下一次跃起/弹跳开启）
     public static void onPlayerTick(PlayerTickEvent.Post event) {
         Player player = event.getEntity();
         if (!player.level().isClientSide() && player.onGround()) {
-            DASHED_THIS_FLIGHT.remove(player.getUUID());
+            LAST_DASH_IMPACT.remove(player.getUUID());
         }
+    }
+
+    // 星月爆发跃起时调用：刷新突进资格（每次跃起均可用一次飞翔）
+    public static void clearDashState(Player player) {
+        LAST_DASH_IMPACT.remove(player.getUUID());
     }
 
     // 游戏总线：重锤必须已附魔风爆，铁砧才允许为其应用飞翔附魔书
@@ -103,8 +113,11 @@ public final class FlyingEnchant {
         if (player.onGround() || !player.isIgnoringFallDamageFromCurrentImpulse()) {
             return; // 必须处于"被星月爆发/风爆弹起后的腾空窗口"
         }
-        if (DASHED_THIS_FLIGHT.contains(player.getUUID())) {
-            return; // 每次腾空限一次
+        // 每次跃起限一次突进：同一次弹跳的爆炸锚点不变则拦截；锚点变化 = 新一轮风爆弹跳，资格刷新
+        Vec3 impactAnchor = player.currentExplosionImpactPos;
+        Vec3 lastAnchor = LAST_DASH_IMPACT.get(player.getUUID());
+        if (lastAnchor != null && impactAnchor != null && impactAnchor.distanceToSqr(lastAnchor) < 1.0E-6) {
+            return;
         }
         ItemStack weapon = player.getMainHandItem();
         int flyingLevel = weapon.getEnchantmentLevel(enchantmentHolder(player, FLYING_KEY));
@@ -123,7 +136,8 @@ public final class FlyingEnchant {
             ? horizontal.normalize()
             : Vec3.directionFromRotation(0.0F, player.getYRot());
         double speed = DASH_SPEED_BASE + DASH_SPEED_PER_LEVEL * (flyingLevel - 1);
-        player.setDeltaMovement(player.getDeltaMovement().add(horizontal.scale(speed)).with(Direction.Axis.Y, DASH_UP));
+        double up = DASH_UP_BASE + DASH_UP_PER_LEVEL * (flyingLevel - 1);
+        player.setDeltaMovement(player.getDeltaMovement().add(horizontal.scale(speed)).with(Direction.Axis.Y, up));
         player.applyPostImpulseGraceTime(10);
         player.connection.send(new ClientboundSetEntityMotionPacket(player));
 
@@ -142,7 +156,9 @@ public final class FlyingEnchant {
         if (!player.hasInfiniteMaterials()) {
             player.getFoodData().setFoodLevel(Math.max(0, player.getFoodData().getFoodLevel() - DASH_HUNGER_COST));
         }
-        DASHED_THIS_FLIGHT.add(player.getUUID());
+        if (impactAnchor != null) {
+            LAST_DASH_IMPACT.put(player.getUUID(), impactAnchor);
+        }
     }
 
     private static Holder<Enchantment> enchantmentHolder(ServerPlayer player, ResourceKey<Enchantment> key) {

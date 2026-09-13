@@ -194,7 +194,7 @@ public class XingyueItem extends Item {
     }
 
     // 原版风爆弹跳同款：Y 轴推力 + 记录起跳点，落地结算摔落时以起跳点为基准，故不受摔落伤害。
-    // 跃起瞬间播放三叉戟落地（音量1）与 spyglass 展开（音量4）音效
+    // 跃起瞬间播放三叉戟落地（音量1）与 spyglass 展开（音量4）音效，并刷新飞翔突进资格（每次跃起可用一次）
     private static void launchPlayer(ServerLevel level, Player player) {
         player.setDeltaMovement(player.getDeltaMovement().with(Direction.Axis.Y, JUMP_POWER));
         player.resetFallDistance();
@@ -202,6 +202,7 @@ public class XingyueItem extends Item {
         if (player instanceof ServerPlayer serverPlayer) {
             serverPlayer.connection.send(new ClientboundSetEntityMotionPacket(serverPlayer));
         }
+        FlyingEnchant.clearDashState(player);
         level.playSound(null, player.getX(), player.getY(), player.getZ(),
             SoundEvents.TRIDENT_HIT_GROUND, SoundSource.PLAYERS, 1.0F, 1.0F);
         level.playSound(null, player.getX(), player.getY(), player.getZ(),
