@@ -28,9 +28,9 @@ import net.minecraft.world.phys.Vec3;
 /**
  * 星月：原创武器（剑）。
  * 左键攻击同原版剑；长按右键蓄力（弓姿势），到 {@link #FULL_CHARGE_TICK} 刻自动爆发：
- * 星月粒子1 三重迸发、半径 {@link #BURST_RADIUS} 格内实体受 {@link #BURST_DAMAGE} 点伤害并被击飞
- * （水平击退 + 向上 {@link #BURST_LAUNCH}，落地结算摔落伤害），玩家跃起约 4 格（可跨越 3 格方块），
- * 落地免摔（复用原版风爆的 impulse 免摔机制）。
+ * 星月粒子1 三重迸发、半径 {@link #BURST_RADIUS} 格内实体受 {@link #BURST_DAMAGE} 点伤害，
+ * 以玩家实体为基准被水平击退约 3 格、向上击飞约 3 格（落地结算摔落伤害）；
+ * 玩家跃起约 4.9 格（可跨越 4 格方块），落地免摔（复用原版风爆的 impulse 免摔机制）。
  * 爆发后进入 {@link #COOLDOWN_TICKS} 刻冷却（物品栏扫表动画）并损耗 1 点耐久（与普攻相同）。
  * 与盾牌共持时无法蓄力，盾牌可正常格挡。
  */
@@ -46,12 +46,12 @@ public class XingyueItem extends Item {
     /** 爆发范围伤害（固定值，不受攻击力属性影响）。 */
     public static final float BURST_DAMAGE = 4.0F;
     public static final double BURST_RADIUS = 2.0;
-    /** 水平击退强度（会按目标击退抗性缩减）。 */
-    public static final double BURST_KNOCKBACK = 1.3;
-    /** 被击飞实体的向上初速（约 5 格腾空，落地结算摔落伤害）。 */
-    public static final double BURST_LAUNCH = 0.9;
-    /** 玩家跃起初速：按原版重力/阻尼约 4 格高，可跨越 3 格方块。 */
-    public static final double JUMP_POWER = 0.8;
+    /** 水平击退初速：按玩家实体空中阻力约位移 3 格（含落地小段滑行），按目标击退抗性缩减。 */
+    public static final double BURST_KNOCKBACK = 0.4;
+    /** 被击飞实体的向上初速：约 3 格腾空，落地结算摔落伤害。 */
+    public static final double BURST_LAUNCH = 0.68;
+    /** 玩家跃起初速：按原版重力/阻尼约 4.9 格高，可跨越 4 格方块。 */
+    public static final double JUMP_POWER = 0.9;
 
     public XingyueItem(Properties properties) {
         super(properties);

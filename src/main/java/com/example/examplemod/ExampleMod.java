@@ -67,11 +67,12 @@ public class ExampleMod {
             }).build());
 
     // 星月粒子类型：xingyue_burst = 星月粒子1（迸发）、xingyue_orbit = 星月粒子2（环绕）
+    // overrideLimiter=true：无视游戏"粒子细节"设置强制渲染，保证特效观感
     public static final DeferredRegister<ParticleType<?>> PARTICLE_TYPES = DeferredRegister.create(Registries.PARTICLE_TYPE, MODID);
     public static final DeferredHolder<ParticleType<?>, SimpleParticleType> XINGYUE_BURST =
-        PARTICLE_TYPES.register("xingyue_burst", () -> new SimpleParticleType(false));
+        PARTICLE_TYPES.register("xingyue_burst", () -> new SimpleParticleType(true));
     public static final DeferredHolder<ParticleType<?>, SimpleParticleType> XINGYUE_ORBIT =
-        PARTICLE_TYPES.register("xingyue_orbit", () -> new SimpleParticleType(false));
+        PARTICLE_TYPES.register("xingyue_orbit", () -> new SimpleParticleType(true));
 
     // 星月：原创武器（剑），长按右键蓄力到 45 刻爆发（范围伤害+击退+跃起免摔），与盾牌共持时不可蓄力
     public static final DeferredItem<XingyueItem> XINGYUE = ITEMS.registerItem("xingyue",
