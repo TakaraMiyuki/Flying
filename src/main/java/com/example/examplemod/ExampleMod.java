@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
 
+import net.minecraft.core.particles.ParticleType;
+import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -12,6 +14,7 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Rarity;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -63,6 +66,19 @@ public class ExampleMod {
                 output.accept(EXAMPLE_ITEM.get());// Add the example item to the tab. For your own tabs, this method is preferred over the event
             }).build());
 
+    // 星月粒子类型：xingyue_burst = 星月粒子1（迸发）、xingyue_orbit = 星月粒子2（环绕）
+    public static final DeferredRegister<ParticleType<?>> PARTICLE_TYPES = DeferredRegister.create(Registries.PARTICLE_TYPE, MODID);
+    public static final DeferredHolder<ParticleType<?>, SimpleParticleType> XINGYUE_BURST =
+        PARTICLE_TYPES.register("xingyue_burst", () -> new SimpleParticleType(false));
+    public static final DeferredHolder<ParticleType<?>, SimpleParticleType> XINGYUE_ORBIT =
+        PARTICLE_TYPES.register("xingyue_orbit", () -> new SimpleParticleType(false));
+
+    // 星月：原创武器（剑），长按右键蓄力到 45 刻爆发（范围伤害+击退+跃起免摔），与盾牌共持时不可蓄力
+    public static final DeferredItem<XingyueItem> XINGYUE = ITEMS.registerItem("xingyue",
+        properties -> new XingyueItem(properties
+            .sword(XingyueItem.MATERIAL, 3.0F, -2.4F)
+            .rarity(Rarity.RARE)));
+
     // The constructor for the mod class is the first code that is run when your mod is loaded.
     // FML will recognize some parameter types like IEventBus or ModContainer and pass them in automatically.
     public ExampleMod(IEventBus modEventBus, ModContainer modContainer) {
@@ -75,6 +91,9 @@ public class ExampleMod {
         ITEMS.register(modEventBus);
         // Register the Deferred Register to the mod event bus so tabs get registered
         CREATIVE_MODE_TABS.register(modEventBus);
+
+        // Register the Deferred Register to the mod event bus so particle types get registered
+        PARTICLE_TYPES.register(modEventBus);
 
         // Register ourselves for server and other game events we are interested in.
         // Note that this is necessary if and only if we want *this* class (ExampleMod) to respond directly to events.
@@ -101,10 +120,13 @@ public class ExampleMod {
         Config.ITEM_STRINGS.get().forEach((item) -> LOGGER.info("ITEM >> {}", item));
     }
 
-    // Add the example block item to the building blocks tab
+    // Add the example block item to the building blocks tab, and Xingyue to the combat tab
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.BUILDING_BLOCKS) {
             event.accept(EXAMPLE_BLOCK_ITEM);
+        }
+        if (event.getTabKey() == CreativeModeTabs.COMBAT) {
+            event.accept(XINGYUE);
         }
     }
 

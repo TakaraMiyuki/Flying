@@ -7,6 +7,7 @@ import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
+import net.neoforged.neoforge.client.event.RegisterParticleProvidersEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 
@@ -27,5 +28,19 @@ public class ExampleModClient {
         // Some client setup code
         ExampleMod.LOGGER.info("HELLO FROM CLIENT SETUP");
         ExampleMod.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
+    }
+
+    @SubscribeEvent
+    static void onRegisterParticles(RegisterParticleProvidersEvent event) {
+        // 星月粒子2（环绕）：小光点，缓慢上浮、渐隐
+        event.registerSpriteSet(ExampleMod.XINGYUE_ORBIT.get(), sprites ->
+            (type, level, x, y, z, velocityX, velocityY, velocityZ, random) ->
+                new XingyueParticle(level, x, y, z, velocityX, velocityY, velocityZ,
+                    sprites.get(random), 8 + random.nextInt(6), 0.10F + random.nextFloat() * 0.06F));
+        // 星月粒子1（迸发）：四芒星光斑，径向飞散、渐隐
+        event.registerSpriteSet(ExampleMod.XINGYUE_BURST.get(), sprites ->
+            (type, level, x, y, z, velocityX, velocityY, velocityZ, random) ->
+                new XingyueParticle(level, x, y, z, velocityX, velocityY, velocityZ,
+                    sprites.get(random), 10 + random.nextInt(8), 0.20F + random.nextFloat() * 0.10F));
     }
 }
