@@ -1,0 +1,16 @@
+{
+  "description": { "translate": "enchantment.examplemod.flying" },
+  "supported_items": [
+    "examplemod:xingyue",
+    "minecraft:mace"
+  ],
+  "primary_items": [
+    "examplemod:xingyue"
+  ],
+  "weight": 5,
+  "max_level": 2,
+  "min_cost": { "base": 5, "per_level_above_first": 10 },
+  "max_cost": { "base": 20, "per_level_above_first": 10 },
+  "anvil_cost": 2,
+  "slots": ["mainhand"]
+}

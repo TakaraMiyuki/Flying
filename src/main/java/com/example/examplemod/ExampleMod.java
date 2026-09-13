@@ -96,6 +96,11 @@ public class ExampleMod {
         // Register the Deferred Register to the mod event bus so particle types get registered
         PARTICLE_TYPES.register(modEventBus);
 
+        // 飞翔附魔：注册突进请求网络包（mod bus）与落地/铁砧事件（游戏总线）
+        modEventBus.addListener(FlyingEnchant::onRegisterPayloads);
+        NeoForge.EVENT_BUS.addListener(FlyingEnchant::onPlayerTick);
+        NeoForge.EVENT_BUS.addListener(FlyingEnchant::onAnvilUpdate);
+
         // Register ourselves for server and other game events we are interested in.
         // Note that this is necessary if and only if we want *this* class (ExampleMod) to respond directly to events.
         // Do not add this line if there are no @SubscribeEvent-annotated functions in this class, like onServerStarting() below.

@@ -3,6 +3,7 @@
   "block.examplemod.example_block": "Example Block",
   "item.examplemod.example_item": "Example Item",
   "item.examplemod.xingyue": "Xing Yue",
+  "enchantment.examplemod.flying": "Flying",
 
   "examplemod.configuration.title": "Example Mod Configs",
   "examplemod.configuration.section.examplemod.common.toml": "Example Mod Configs",

@@ -1,14 +1,18 @@
 package com.example.examplemod;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterParticleProvidersEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 
 // This class will not load on dedicated servers. Accessing client side code from here is safe.
@@ -42,5 +46,26 @@ public class ExampleModClient {
             (type, level, x, y, z, velocityX, velocityY, velocityZ, random) ->
                 new XingyueParticle(level, x, y, z, velocityX, velocityY, velocityZ,
                     sprites.get(random), 14 + random.nextInt(9), 0.30F + random.nextFloat() * 0.25F));
+    }
+
+    // 飞翔附魔：腾空中按跳跃键 → 请求服务端突进。
+    // 这里只做最便宜的客户端预筛（腾空 + 主手是星月/重锤）；弹起窗口、附魔等级、
+    // 饱食度、每次腾空一次等全部条件由服务端校验（弹起状态不同步到客户端，客户端无法预判）。
+    @SubscribeEvent
+    static void onClientTick(ClientTickEvent.Post event) {
+        Minecraft mc = Minecraft.getInstance();
+        var player = mc.player;
+        if (player == null || mc.gui.screen() != null || player.isSpectator()) {
+            return;
+        }
+        ItemStack mainHand = player.getMainHandItem();
+        if (!(mainHand.getItem() instanceof XingyueItem) && !mainHand.is(Items.MACE)) {
+            return;
+        }
+        while (mc.options.keyJump.consumeClick()) {
+            if (!player.onGround()) {
+                ClientPacketDistributor.sendToServer(XingyueDashPayload.INSTANCE);
+            }
+        }
     }
 }
