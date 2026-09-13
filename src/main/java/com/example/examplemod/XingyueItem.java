@@ -4,6 +4,7 @@ import java.util.function.Predicate;
 
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -45,7 +46,7 @@ public class XingyueItem extends Item {
     public static final int COOLDOWN_TICKS = 88;
     /** 爆发范围伤害（固定值，不受攻击力属性影响）。 */
     public static final float BURST_DAMAGE = 4.0F;
-    public static final double BURST_RADIUS = 2.0;
+    public static final double BURST_RADIUS = 3.0;
     /** 水平击退初速：按玩家实体空中阻力约位移 3 格（含落地小段滑行），按目标击退抗性缩减。 */
     public static final double BURST_KNOCKBACK = 0.4;
     /** 被击飞实体的向上初速：约 3 格腾空，落地结算摔落伤害。 */
@@ -120,7 +121,7 @@ public class XingyueItem extends Item {
         if (level instanceof ServerLevel serverLevel && entity instanceof Player player) {
             damageArea(serverLevel, player);
             burstEffects(serverLevel, player);
-            launchPlayer(player);
+            launchPlayer(serverLevel, player);
             player.getCooldowns().addCooldown(stack, COOLDOWN_TICKS);
             stack.hurtAndBreak(1, entity, entity.getUsedItemHand());
         }
@@ -176,16 +177,34 @@ public class XingyueItem extends Item {
                 centerX + Math.cos(angle) * dist, player.getY() + 0.2, centerZ + Math.sin(angle) * dist,
                 0, 0.0, 0.9 + level.getRandom().nextDouble() * 0.6, 0.0, 0.5);
         }
+        // 星月粒子2：环绕光点被迸发出去——移动向量模长 3，速度 1
+        for (int i = 0; i < 16; i++) {
+            double angle = i * (Math.PI * 2 / 16.0);
+            level.sendParticles(ExampleMod.XINGYUE_ORBIT.get(),
+                centerX, player.getY() + 0.8, centerZ, 0, Math.cos(angle) * 3.0, 0.0, Math.sin(angle) * 3.0, 1.0);
+        }
+        // 脚下一圈云雾尘土（踩地板粒子）
+        for (int i = 0; i < 14; i++) {
+            double angle = i * (Math.PI * 2 / 14.0);
+            level.sendParticles(ParticleTypes.CLOUD,
+                centerX + Math.cos(angle) * 0.9, player.getY() + 0.1, centerZ + Math.sin(angle) * 0.9,
+                1, 0.0, 0.0, 0.0, 0.0);
+        }
         level.playSound(null, centerX, centerY, centerZ, SoundEvents.WIND_CHARGE_BURST, SoundSource.PLAYERS, 1.0F, 1.0F);
     }
 
-    // 原版风爆弹跳同款：Y 轴推力 + 记录起跳点，落地结算摔落时以起跳点为基准，故不受摔落伤害
-    private static void launchPlayer(Player player) {
+    // 原版风爆弹跳同款：Y 轴推力 + 记录起跳点，落地结算摔落时以起跳点为基准，故不受摔落伤害。
+    // 跃起瞬间播放三叉戟落地（音量1）与 spyglass 展开（音量4）音效
+    private static void launchPlayer(ServerLevel level, Player player) {
         player.setDeltaMovement(player.getDeltaMovement().with(Direction.Axis.Y, JUMP_POWER));
         player.resetFallDistance();
         player.setIgnoreFallDamageFromCurrentImpulse(true, player.position());
         if (player instanceof ServerPlayer serverPlayer) {
             serverPlayer.connection.send(new ClientboundSetEntityMotionPacket(serverPlayer));
         }
+        level.playSound(null, player.getX(), player.getY(), player.getZ(),
+            SoundEvents.TRIDENT_HIT_GROUND, SoundSource.PLAYERS, 1.0F, 1.0F);
+        level.playSound(null, player.getX(), player.getY(), player.getZ(),
+            SoundEvents.SPYGLASS_USE, SoundSource.PLAYERS, 4.0F, 1.0F);
     }
 }
