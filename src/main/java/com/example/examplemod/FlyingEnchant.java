@@ -57,9 +57,13 @@ public final class FlyingEnchant {
     /**
      * 每位玩家上次突进时的爆炸命中锚点（ServerPlayer.currentExplosionImpactPos）。
      * 锚点变化 = 发生了新一轮风爆弹跳 = 突进资格刷新；同一次弹跳内锚点不变，突进只允许一次。
+     * 玩家从未被爆炸命中时该字段为 null（如纯星月爆发场景），此时以 {@link #NO_EXPLOSION_ANCHOR}
+     * 哨兵参与比较——哨兵在突进后写入，同一次跃起内的后续请求即被拦截。
      * 落地时清除（见 {@link #onPlayerTick}）；星月爆发跃起时由 {@link #clearDashState} 主动清除。
      */
     private static final Map<UUID, Vec3> LAST_DASH_IMPACT = new HashMap<>();
+    /** 无爆炸锚点时的哨兵值（场外固定点，不可能与真实锚点重合）。 */
+    private static final Vec3 NO_EXPLOSION_ANCHOR = new Vec3(0.0, -1000.0, 0.0);
 
     private FlyingEnchant() {
     }
@@ -115,8 +119,9 @@ public final class FlyingEnchant {
         }
         // 每次跃起限一次突进：同一次弹跳的爆炸锚点不变则拦截；锚点变化 = 新一轮风爆弹跳，资格刷新
         Vec3 impactAnchor = player.currentExplosionImpactPos;
+        Vec3 anchorMarker = impactAnchor != null ? impactAnchor : NO_EXPLOSION_ANCHOR;
         Vec3 lastAnchor = LAST_DASH_IMPACT.get(player.getUUID());
-        if (lastAnchor != null && impactAnchor != null && impactAnchor.distanceToSqr(lastAnchor) < 1.0E-6) {
+        if (lastAnchor != null && anchorMarker.distanceToSqr(lastAnchor) < 1.0E-6) {
             return;
         }
         ItemStack weapon = player.getMainHandItem();
@@ -156,9 +161,7 @@ public final class FlyingEnchant {
         if (!player.hasInfiniteMaterials()) {
             player.getFoodData().setFoodLevel(Math.max(0, player.getFoodData().getFoodLevel() - DASH_HUNGER_COST));
         }
-        if (impactAnchor != null) {
-            LAST_DASH_IMPACT.put(player.getUUID(), impactAnchor);
-        }
+        LAST_DASH_IMPACT.put(player.getUUID(), anchorMarker);
     }
 
     private static Holder<Enchantment> enchantmentHolder(ServerPlayer player, ResourceKey<Enchantment> key) {
