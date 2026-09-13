@@ -28,31 +28,45 @@ import net.minecraft.world.phys.Vec3;
 /**
  * 星月：原创武器（剑）。
  * 左键攻击同原版剑；长按右键蓄力（弓姿势），到 {@link #FULL_CHARGE_TICK} 刻自动爆发：
- * 星月粒子1 迸发、半径 {@link #BURST_RADIUS} 格内实体受伤并被击退，玩家获得 Y 轴推力跃起，
- * 落地免摔（复用原版风爆的 impulse 免摔机制）。与盾牌共持时无法蓄力，盾牌可正常格挡。
+ * 星月粒子1 三重迸发、半径 {@link #BURST_RADIUS} 格内实体受 {@link #BURST_DAMAGE} 点伤害并被击飞
+ * （水平击退 + 向上 {@link #BURST_LAUNCH}，落地结算摔落伤害），玩家跃起约 4 格（可跨越 3 格方块），
+ * 落地免摔（复用原版风爆的 impulse 免摔机制）。
+ * 爆发后进入 {@link #COOLDOWN_TICKS} 刻冷却（物品栏扫表动画）并损耗 1 点耐久（与普攻相同）。
+ * 与盾牌共持时无法蓄力，盾牌可正常格挡。
  */
 public class XingyueItem extends Item {
-    /** 星月材质：1680 耐久，攻击伤害加成 3.0（+3.0 基线 = 总伤害 7，tooltip 显示“7 攻击伤害”），下界合金级采矿与修复。 */
+    /** 星月材质：1680 耐久，攻击伤害加成 3.0（+3.0 基线 = 总伤害 7），下界合金级采矿与修复。 */
     public static final ToolMaterial MATERIAL = new ToolMaterial(
         BlockTags.INCORRECT_FOR_NETHERITE_TOOL, 1680, 9.0F, 3.0F, 15, ItemTags.NETHERITE_TOOL_MATERIALS);
 
     public static final int FULL_CHARGE_TICK = 45;
     public static final int CHARGE_START_TICK = 6;
+    /** 特殊攻击冷却（游戏刻）。 */
+    public static final int COOLDOWN_TICKS = 88;
+    /** 爆发范围伤害（固定值，不受攻击力属性影响）。 */
+    public static final float BURST_DAMAGE = 4.0F;
     public static final double BURST_RADIUS = 2.0;
-    public static final double BURST_KNOCKBACK = 0.9;
-    /** 跃起初速：按原版重力/阻尼约跳起 2.1 格。 */
-    public static final double JUMP_POWER = 0.56;
+    /** 水平击退强度（会按目标击退抗性缩减）。 */
+    public static final double BURST_KNOCKBACK = 1.3;
+    /** 被击飞实体的向上初速（约 5 格腾空，落地结算摔落伤害）。 */
+    public static final double BURST_LAUNCH = 0.9;
+    /** 玩家跃起初速：按原版重力/阻尼约 4 格高，可跨越 3 格方块。 */
+    public static final double JUMP_POWER = 0.8;
 
     public XingyueItem(Properties properties) {
         super(properties);
     }
 
-    // 另一只手持可格挡物品（盾牌）时交出使用权：主手 PASS 后原版会继续尝试副手，盾牌正常举盾
+    // 冷却中无法使用特殊攻击；另一只手持可格挡物品（盾牌）时交出使用权，盾牌正常举盾
     @Override
     public InteractionResult use(Level level, Player player, InteractionHand hand) {
+        ItemStack stack = player.getItemInHand(hand);
         InteractionHand otherHand = hand == InteractionHand.MAIN_HAND ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
         if (player.getItemInHand(otherHand).has(DataComponents.BLOCKS_ATTACKS)) {
             return InteractionResult.PASS;
+        }
+        if (player.getCooldowns().isOnCooldown(stack)) {
+            return InteractionResult.FAIL;
         }
         player.startUsingItem(hand);
         return InteractionResult.CONSUME;
@@ -69,7 +83,8 @@ public class XingyueItem extends Item {
         return ItemUseAnimation.BOW;
     }
 
-    // 蓄力期间：星月粒子2 环绕玩家，随进度变密、半径变大（客户端每刻在玩家当前位置周围生成）
+    // 蓄力期间：星月粒子2 环绕玩家——数量随进度平方加速增多，环绕半径与高度带扩大，上升加快；
+    // 蓄力后半段额外生成贴地外圈光点，营造能量汇聚感（客户端每刻在玩家当前位置周围生成）
     @Override
     public void onUseTick(Level level, LivingEntity entity, ItemStack stack, int remaining) {
         if (!level.isClientSide()) {
@@ -80,14 +95,22 @@ public class XingyueItem extends Item {
             return;
         }
         float progress = Math.min(1.0F, (elapsed - CHARGE_START_TICK) / (float) (FULL_CHARGE_TICK - CHARGE_START_TICK));
-        int count = 1 + Math.round(progress * 2.0F);
-        double radius = 0.7 + 0.5 * progress;
+        int count = 1 + Math.round(progress * progress * 5.0F);
+        double radius = 0.6 + 0.8 * progress;
+        double heightBand = 0.6 + 1.2 * progress;
         for (int i = 0; i < count; i++) {
             double angle = (elapsed * 25.0 + i * 360.0 / count) * (Math.PI / 180.0);
             double px = entity.getX() + Math.cos(angle) * radius;
             double pz = entity.getZ() + Math.sin(angle) * radius;
-            double py = entity.getY() + 0.4 + level.getRandom().nextDouble() * (0.4 + 0.8 * progress);
-            level.addParticle(ExampleMod.XINGYUE_ORBIT.get(), px, py, pz, 0.0, 0.015 + 0.02 * progress, 0.0);
+            double py = entity.getY() + 0.2 + level.getRandom().nextDouble() * heightBand;
+            level.addParticle(ExampleMod.XINGYUE_ORBIT.get(), px, py, pz, 0.0, 0.01 + 0.04 * progress, 0.0);
+        }
+        if (progress > 0.7F && level.getRandom().nextBoolean()) {
+            double angle = (elapsed * 40.0) * (Math.PI / 180.0);
+            double outerRadius = radius + 0.4 + 0.3 * (1.0F - progress);
+            level.addParticle(ExampleMod.XINGYUE_ORBIT.get(),
+                entity.getX() + Math.cos(angle) * outerRadius, entity.getY() + 0.1,
+                entity.getZ() + Math.sin(angle) * outerRadius, 0.0, 0.06, 0.0);
         }
     }
 
@@ -98,19 +121,21 @@ public class XingyueItem extends Item {
             damageArea(serverLevel, player);
             burstEffects(serverLevel, player);
             launchPlayer(player);
+            player.getCooldowns().addCooldown(stack, COOLDOWN_TICKS);
+            stack.hurtAndBreak(1, entity, entity.getUsedItemHand());
         }
         return stack;
     }
 
     private static void damageArea(ServerLevel level, Player player) {
-        float damage = (float) player.getAttributeValue(Attributes.ATTACK_DAMAGE);
         level.getEntitiesOfClass(LivingEntity.class, player.getBoundingBox().inflate(BURST_RADIUS), burstTargets(player))
             .forEach(target -> {
-                target.hurtServer(level, player.damageSources().playerAttack(player), damage);
+                target.hurtServer(level, player.damageSources().playerAttack(player), BURST_DAMAGE);
                 Vec3 direction = target.position().subtract(player.position());
                 if (direction.lengthSqr() > 1.0E-4) {
-                    Vec3 knockback = direction.normalize().scale(BURST_KNOCKBACK);
-                    target.push(knockback.x, 0.5, knockback.z);
+                    double resistanceScale = 1.0 - target.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE);
+                    Vec3 knockback = direction.normalize().scale(BURST_KNOCKBACK * resistanceScale);
+                    target.push(knockback.x, BURST_LAUNCH * resistanceScale, knockback.z);
                     if (target instanceof ServerPlayer targetPlayer) {
                         targetPlayer.connection.send(new ClientboundSetEntityMotionPacket(targetPlayer));
                     }
@@ -131,11 +156,25 @@ public class XingyueItem extends Item {
         double centerX = player.getX();
         double centerY = player.getY() + 1.0;
         double centerZ = player.getZ();
-        // 星月粒子1：环形迸发（sendParticles count=0 时以速度模式生成单个粒子）
-        for (int i = 0; i < 24; i++) {
-            double angle = i * (Math.PI * 2 / 24.0);
+        // 主环：星月粒子1 从腰部高速向四周迸发（sendParticles count=0 时以速度模式生成单个粒子）
+        for (int i = 0; i < 36; i++) {
+            double angle = i * (Math.PI * 2 / 36.0);
             level.sendParticles(ExampleMod.XINGYUE_BURST.get(),
-                centerX, centerY, centerZ, 0, Math.cos(angle), 0.1, Math.sin(angle), 0.35);
+                centerX, centerY, centerZ, 0, Math.cos(angle) * 1.2, 0.15, Math.sin(angle) * 1.2, 0.45);
+        }
+        // 贴地冲击环：低空向外的光尘，强化范围感
+        for (int i = 0; i < 20; i++) {
+            double angle = i * (Math.PI * 2 / 20.0);
+            level.sendParticles(ExampleMod.XINGYUE_BURST.get(),
+                centerX, player.getY() + 0.15, centerZ, 0, Math.cos(angle) * 1.6, 0.05, Math.sin(angle) * 1.6, 0.35);
+        }
+        // 上升光柱：能量向上喷发
+        for (int i = 0; i < 12; i++) {
+            double angle = level.getRandom().nextDouble() * Math.PI * 2;
+            double dist = level.getRandom().nextDouble() * 1.2;
+            level.sendParticles(ExampleMod.XINGYUE_BURST.get(),
+                centerX + Math.cos(angle) * dist, player.getY() + 0.2, centerZ + Math.sin(angle) * dist,
+                0, 0.0, 0.9 + level.getRandom().nextDouble() * 0.6, 0.0, 0.5);
         }
         level.playSound(null, centerX, centerY, centerZ, SoundEvents.WIND_CHARGE_BURST, SoundSource.PLAYERS, 1.0F, 1.0F);
     }
