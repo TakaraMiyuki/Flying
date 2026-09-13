@@ -4,6 +4,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 
+import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.particles.ParticleTypes;
@@ -114,21 +115,22 @@ public final class FlyingEnchant {
             return; // 饱食度不足（与疾跑同门槛）
         }
 
-        // 前上方突进：视线水平方向（归一化，俯视不减距）× 等级速度 + 固定向上分量，保留爆发残余动量
+        // 前上方突进：视线水平方向（归一化，俯视不减距）× 等级速度，叠加到水平动量上；
+        // 垂直分量整体重置为固定上抬——否则爆发下坠阶段的负速度会把突进抵消掉
         Vec3 look = player.getLookAngle();
         Vec3 horizontal = new Vec3(look.x, 0.0, look.z);
         horizontal = horizontal.lengthSqr() > 1.0E-4
             ? horizontal.normalize()
             : Vec3.directionFromRotation(0.0F, player.getYRot());
         double speed = DASH_SPEED_BASE + DASH_SPEED_PER_LEVEL * (flyingLevel - 1);
-        player.addDeltaMovement(horizontal.scale(speed).add(0.0, DASH_UP, 0.0));
+        player.setDeltaMovement(player.getDeltaMovement().add(horizontal.scale(speed)).with(Direction.Axis.Y, DASH_UP));
         player.applyPostImpulseGraceTime(10);
         player.connection.send(new ClientboundSetEntityMotionPacket(player));
 
-        // 特效：脚下白色风爆粒子 + 风爆音效
-        for (int i = 0; i < 10; i++) {
-            double angle = i * (Math.PI * 2 / 10.0);
-            level.sendParticles(ParticleTypes.GUST,
+        // 特效：脚下少量白色风爆粒子 + 风爆音效
+        for (int i = 0; i < 6; i++) {
+            double angle = i * (Math.PI * 2 / 6.0);
+            level.sendParticles(ParticleTypes.SMALL_GUST,
                 player.getX() + Math.cos(angle) * 0.8, player.getY() + 0.1, player.getZ() + Math.sin(angle) * 0.8,
                 1, 0.0, 0.0, 0.0, 0.0);
         }
