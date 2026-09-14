@@ -1,7 +1,9 @@
 package com.example.examplemod;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import net.minecraft.core.Direction;
@@ -24,18 +26,22 @@ import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.AnvilUpdateEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 /**
  * 飞翔（flying）附魔：仅作用于星月与重锤（重锤须先附魔风爆才能获得，见 {@link #onAnvilUpdate}）。
- * 效果：处于"被弹起后的腾空窗口"（星月特殊攻击跃起，或风爆下坠攻击弹跳）时按跳跃键，
- * 向视线前上方突进一段距离（一级 ≈2 格 / 二级 ≈3 格，抬高约 0.5 格）。
- * 每次腾空限一次；消耗 1 点武器耐久与 2 点饥饿（不受等级影响，创造豁免），
- * 饱食度不高于疾跑阈值（6）时不可用。突进时脚下泛起白色风爆粒子并播放风爆音效。
- * 弹起窗口的判定依据：{@code LivingEntity.isIgnoringFallDamageFromCurrentImpulse()}——
- * 星月的 {@code launchPlayer} 与原版重锤风爆（{@code MaceItem.hurtEnemy}）都会设置该状态，落地即失效。
+ * 效果：处于"跃起窗口"时按跳跃键，向视线前上方突进（一级 ≈3 格 / 二级 ≈4 格，抬高约 0.5 / 1 格）。
+ * 每次跃起限一次；消耗 1 点武器耐久与 2 点饥饿（不受等级影响，创造豁免），
+ * 饱食度不高于疾跑阈值（6）时不可用。突进时脚下泛起少量白色风爆粒子并播放风爆音效。
+ *
+ * <p>跃起窗口由服务端自研检测维护（不依赖原版 impulse 免摔状态——那会在风爆附魔爆炸时被
+ * {@code onExplosionHit} 重置为 false，导致第二次跃起后无法突进）：服务端每刻采样玩家垂直速度，
+ * "上一刻 ≤ {@link #LAUNCH_LAST_Y_MAX} → 本刻 ≥ {@link #LAUNCH_Y_MIN}"的强烈上升反转即为一次跃起，
+ * 覆盖星月爆发（初速 0.9）、重锤风爆弹跳与星月+风爆下坠弹跳；普通跳跃（0.42）不会误判。
+ * 窗口在落地时关闭。创造飞行与鞘翅滑翔不触发。</p>
  */
 public final class FlyingEnchant {
     public static final ResourceKey<Enchantment> FLYING_KEY =
@@ -54,16 +60,17 @@ public final class FlyingEnchant {
     /** 疾跑所需饱食度阈值（须严格大于才可突进）。 */
     public static final int SPRINT_FOOD_THRESHOLD = 6;
 
-    /**
-     * 每位玩家上次突进时的爆炸命中锚点（ServerPlayer.currentExplosionImpactPos）。
-     * 锚点变化 = 发生了新一轮风爆弹跳 = 突进资格刷新；同一次弹跳内锚点不变，突进只允许一次。
-     * 玩家从未被爆炸命中时该字段为 null（如纯星月爆发场景），此时以 {@link #NO_EXPLOSION_ANCHOR}
-     * 哨兵参与比较——哨兵在突进后写入，同一次跃起内的后续请求即被拦截。
-     * 落地时清除（见 {@link #onPlayerTick}）；星月爆发跃起时由 {@link #clearDashState} 主动清除。
-     */
-    private static final Map<UUID, Vec3> LAST_DASH_IMPACT = new HashMap<>();
-    /** 无爆炸锚点时的哨兵值（场外固定点，不可能与真实锚点重合）。 */
-    private static final Vec3 NO_EXPLOSION_ANCHOR = new Vec3(0.0, -1000.0, 0.0);
+    /** 跃起判定：上一刻 Y 速度上限（下坠/静止区间）。 */
+    public static final double LAUNCH_LAST_Y_MAX = 0.02;
+    /** 跃起判定：本刻 Y 速度下限（须高于普通跳跃的 0.42）。 */
+    public static final double LAUNCH_Y_MIN = 0.5;
+
+    /** 服务端每刻记录的玩家 Y 速度，用于跃起反转检测。 */
+    private static final Map<UUID, Double> LAST_Y_VEL = new HashMap<>();
+    /** 处于跃起窗口（可突进）的玩家。 */
+    private static final Set<UUID> LAUNCHED = new HashSet<>();
+    /** 本窗口内已突进过的玩家。 */
+    private static final Set<UUID> DASH_USED = new HashSet<>();
 
     private FlyingEnchant() {
     }
@@ -75,17 +82,46 @@ public final class FlyingEnchant {
             (payload, context) -> handleDashRequest(context.player()));
     }
 
-    // 游戏总线：玩家落地即清除突进状态（新的腾空窗口由下一次跃起/弹跳开启）
+    // 游戏总线：每刻采样垂直速度做跃起检测 + 落地关窗
     public static void onPlayerTick(PlayerTickEvent.Post event) {
         Player player = event.getEntity();
-        if (!player.level().isClientSide() && player.onGround()) {
-            LAST_DASH_IMPACT.remove(player.getUUID());
+        if (player.level().isClientSide()) {
+            return;
+        }
+        UUID uuid = player.getUUID();
+        double yVel = player.getDeltaMovement().y;
+        Double lastY = LAST_Y_VEL.put(uuid, yVel);
+        // 强烈上升反转 = 一次跃起（弹跳发生时玩家可能尚有一刻触地，故先于落地判定）
+        boolean launchSpike = !player.getAbilities().flying
+            && !player.isFallFlying()
+            && lastY != null
+            && lastY <= LAUNCH_LAST_Y_MAX
+            && yVel >= LAUNCH_Y_MIN;
+        if (launchSpike) {
+            LAUNCHED.add(uuid);
+            DASH_USED.remove(uuid);
+        } else if (player.onGround()) {
+            LAUNCHED.remove(uuid);
+            DASH_USED.remove(uuid);
+            LAST_Y_VEL.remove(uuid);
         }
     }
 
-    // 星月爆发跃起时调用：刷新突进资格（每次跃起均可用一次飞翔）
-    public static void clearDashState(Player player) {
-        LAST_DASH_IMPACT.remove(player.getUUID());
+    // 星月爆发跃起时调用：开启突进窗口（与跃起检测等价的双保险）
+    public static void onXingyueLaunch(Player player) {
+        if (player.level().isClientSide()) {
+            return;
+        }
+        LAUNCHED.add(player.getUUID());
+        DASH_USED.remove(player.getUUID());
+    }
+
+    // 游戏总线：退出时清理状态
+    public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        UUID uuid = event.getEntity().getUUID();
+        LAST_Y_VEL.remove(uuid);
+        LAUNCHED.remove(uuid);
+        DASH_USED.remove(uuid);
     }
 
     // 游戏总线：重锤必须已附魔风爆，铁砧才允许为其应用飞翔附魔书
@@ -96,7 +132,7 @@ public final class FlyingEnchant {
             return;
         }
         ItemEnchantments stored = right.get(DataComponents.STORED_ENCHANTMENTS);
-        if (stored == null || !left.is(Items.MACE)) {
+        if (stored == null) {
             return;
         }
         var registry = event.getPlayer().registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
@@ -114,15 +150,12 @@ public final class FlyingEnchant {
         if (!(basePlayer instanceof ServerPlayer player) || !(player.level() instanceof ServerLevel level)) {
             return;
         }
-        if (player.onGround() || !player.isIgnoringFallDamageFromCurrentImpulse()) {
-            return; // 必须处于"被星月爆发/风爆弹起后的腾空窗口"
+        UUID uuid = player.getUUID();
+        if (player.onGround() || !LAUNCHED.contains(uuid)) {
+            return; // 必须处于跃起窗口内
         }
-        // 每次跃起限一次突进：同一次弹跳的爆炸锚点不变则拦截；锚点变化 = 新一轮风爆弹跳，资格刷新
-        Vec3 impactAnchor = player.currentExplosionImpactPos;
-        Vec3 anchorMarker = impactAnchor != null ? impactAnchor : NO_EXPLOSION_ANCHOR;
-        Vec3 lastAnchor = LAST_DASH_IMPACT.get(player.getUUID());
-        if (lastAnchor != null && anchorMarker.distanceToSqr(lastAnchor) < 1.0E-6) {
-            return;
+        if (DASH_USED.contains(uuid)) {
+            return; // 每次跃起限一次
         }
         ItemStack weapon = player.getMainHandItem();
         int flyingLevel = weapon.getEnchantmentLevel(enchantmentHolder(player, FLYING_KEY));
@@ -161,7 +194,7 @@ public final class FlyingEnchant {
         if (!player.hasInfiniteMaterials()) {
             player.getFoodData().setFoodLevel(Math.max(0, player.getFoodData().getFoodLevel() - DASH_HUNGER_COST));
         }
-        LAST_DASH_IMPACT.put(player.getUUID(), anchorMarker);
+        DASH_USED.add(uuid);
     }
 
     private static Holder<Enchantment> enchantmentHolder(ServerPlayer player, ResourceKey<Enchantment> key) {

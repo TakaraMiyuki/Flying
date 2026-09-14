@@ -202,7 +202,7 @@ public class XingyueItem extends Item {
         if (player instanceof ServerPlayer serverPlayer) {
             serverPlayer.connection.send(new ClientboundSetEntityMotionPacket(serverPlayer));
         }
-        FlyingEnchant.clearDashState(player);
+        FlyingEnchant.onXingyueLaunch(player);
         level.playSound(null, player.getX(), player.getY(), player.getZ(),
             SoundEvents.TRIDENT_HIT_GROUND, SoundSource.PLAYERS, 1.0F, 1.0F);
         level.playSound(null, player.getX(), player.getY(), player.getZ(),
