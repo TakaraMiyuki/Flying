@@ -49,8 +49,8 @@ public class XingyueItem extends Item {
     public static final double BURST_RADIUS = 3.0;
     /** 水平击退初速：按玩家实体空中阻力约位移 3 格（含落地小段滑行），按目标击退抗性缩减。 */
     public static final double BURST_KNOCKBACK = 0.4;
-    /** 被击飞实体的向上初速：约 3 格腾空，落地结算摔落伤害。 */
-    public static final double BURST_LAUNCH = 0.68;
+    /** 被击飞实体的向上初速：约 1 格腾空。 */
+    public static final double BURST_LAUNCH = 0.38;
     /** 玩家跃起初速：按原版重力/阻尼约 4.9 格高，可跨越 4 格方块。 */
     public static final double JUMP_POWER = 0.9;
 
@@ -84,18 +84,25 @@ public class XingyueItem extends Item {
         return ItemUseAnimation.BOW;
     }
 
-    // 蓄力期间：星月粒子2 环绕玩家——数量随进度平方加速增多，环绕半径与高度带扩大，上升加快；
-    // 蓄力后半段额外生成贴地外圈光点，营造能量汇聚感（客户端每刻在玩家当前位置周围生成）
+    // 蓄力期间：
+    // 服务端——每 4 刻播放一次紫水晶鸣响（高音调，契合星月主题），音量与音调随蓄力进度渐强；
+    // 客户端——星月粒子2 环绕玩家，数量随进度平方加速增多，环绕半径与高度带扩大，
+    // 蓄力后半段额外生成贴地外圈光点，营造能量汇聚感
     @Override
     public void onUseTick(Level level, LivingEntity entity, ItemStack stack, int remaining) {
-        if (!level.isClientSide()) {
-            return;
-        }
         int elapsed = getUseDuration(stack, entity) - remaining;
         if (elapsed < CHARGE_START_TICK) {
             return;
         }
         float progress = Math.min(1.0F, (elapsed - CHARGE_START_TICK) / (float) (FULL_CHARGE_TICK - CHARGE_START_TICK));
+        if (!level.isClientSide()) {
+            if (elapsed % 4 == 0) {
+                level.playSound(null, entity.getX(), entity.getY() + 0.5, entity.getZ(),
+                    SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS,
+                    0.15F + 0.85F * progress, 1.0F + 0.5F * progress);
+            }
+            return;
+        }
         int count = 1 + Math.round(progress * progress * 5.0F);
         double radius = 0.6 + 0.8 * progress;
         double heightBand = 0.6 + 1.2 * progress;
