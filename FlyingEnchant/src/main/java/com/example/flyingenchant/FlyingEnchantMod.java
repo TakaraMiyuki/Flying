@@ -30,6 +30,7 @@ import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.AnvilUpdateEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
@@ -89,7 +90,12 @@ public final class FlyingEnchantMod {
     private static final Set<UUID> DASH_USED = new HashSet<>();
 
     public FlyingEnchantMod(IEventBus modEventBus) {
+        // mod bus：网络包注册
         modEventBus.addListener(this::onRegisterPayloads);
+        // 游戏总线：跃起检测（突进窗口）、铁砧风爆前置否决、退出清理
+        NeoForge.EVENT_BUS.addListener(FlyingEnchantMod::onPlayerTick);
+        NeoForge.EVENT_BUS.addListener(FlyingEnchantMod::onAnvilUpdate);
+        NeoForge.EVENT_BUS.addListener(FlyingEnchantMod::onPlayerLoggedOut);
     }
 
     // mod bus：注册服务端 payload 处理器
