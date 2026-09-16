@@ -9,7 +9,8 @@ description='''
 与星月模组（examplemod）互相独立、可选共存。
 '''
 
-[[mixins]]
+# The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.
+#[[mixins]]
 #config="${mod_id}.mixins.json"
 
 [[dependencies.${mod_id}]]

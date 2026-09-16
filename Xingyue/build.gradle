@@ -106,8 +106,9 @@ configurations {
 }
 
 dependencies {
-    // 联调运行：runClient 同时加载飞翔附魔模组 jar（localRuntime 不参与打包与发布）
-    localRuntime project(':FlyingEnchant')
+    // 联调运行：runClient 同时加载飞翔附魔模组 jar（localRuntime 不参与打包与发布；
+    // 用 jar 文件而非 project 引用，避免依赖解析把对方类文件并入本项目产物）
+    localRuntime files(project(':FlyingEnchant').tasks.named('jar').map { it.archiveFile })
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
