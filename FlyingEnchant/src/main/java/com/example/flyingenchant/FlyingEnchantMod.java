@@ -6,6 +6,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
+
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
@@ -82,6 +85,10 @@ public final class FlyingEnchantMod {
     /** 跃起判定：本刻 Y 速度下限（须高于普通跳跃的 0.42）。 */
     public static final double LAUNCH_Y_MIN = 0.5;
 
+    /** 诊断日志开关（定位突进链路问题用，问题闭环后关闭）。 */
+    static final boolean DEBUG = true;
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     /** 服务端每刻记录的玩家 Y 速度，用于跃起反转检测。 */
     private static final Map<UUID, Double> LAST_Y_VEL = new HashMap<>();
     /** 处于跃起窗口（可突进）的玩家。 */
@@ -123,6 +130,7 @@ public final class FlyingEnchantMod {
         if (launchSpike) {
             LAUNCHED.add(uuid);
             DASH_USED.remove(uuid);
+            if (DEBUG) LOGGER.info("【飞翔】检测到跃起，突进窗口已开启: {}", player.getName().getString());
         } else if (player.onGround()) {
             LAUNCHED.remove(uuid);
             DASH_USED.remove(uuid);
@@ -165,19 +173,26 @@ public final class FlyingEnchantMod {
             return;
         }
         UUID uuid = player.getUUID();
+        if (DEBUG) LOGGER.info("【飞翔】收到突进请求: airborne={}, launched={}, dashUsed={}",
+            !player.onGround(), LAUNCHED.contains(uuid), DASH_USED.contains(uuid));
         if (player.onGround() || !LAUNCHED.contains(uuid)) {
-            return; // 必须处于跃起窗口内
+            if (DEBUG) LOGGER.info("【飞翔】拒绝：不在跃起窗口内");
+            return;
         }
         if (DASH_USED.contains(uuid)) {
-            return; // 每次跃起限一次
+            if (DEBUG) LOGGER.info("【飞翔】拒绝：本窗口已突进过");
+            return;
         }
         ItemStack weapon = player.getMainHandItem();
         int flyingLevel = weapon.getEnchantmentLevel(enchantmentHolder(player, FLYING_KEY));
         if (flyingLevel <= 0 || !weapon.is(FLYING_ENCHANTABLE)) {
-            return; // 主手必须为飞翔适用物品（星月/重锤，由共享 tag 决定）且已附魔飞翔
+            if (DEBUG) LOGGER.info("【飞翔】拒绝：主手物品无飞翔附魔或不在适用 tag (level={}, tag={})",
+                flyingLevel, weapon.is(FLYING_ENCHANTABLE));
+            return;
         }
         if (!player.hasInfiniteMaterials() && player.getFoodData().getFoodLevel() <= SPRINT_FOOD_THRESHOLD) {
-            return; // 饱食度不足（与疾跑同门槛）
+            if (DEBUG) LOGGER.info("【飞翔】拒绝：饱食度不足");
+            return;
         }
 
         // 前上方突进：视线水平方向（归一化，俯视不减距）× 等级速度，叠加到水平动量上；
