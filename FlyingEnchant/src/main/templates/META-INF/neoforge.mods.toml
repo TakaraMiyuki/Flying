@@ -1,0 +1,35 @@
+license="All Rights Reserved"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+description='''
+飞翔（flying）附魔：让星月与重锤获得空中突进能力。
+与星月模组（examplemod）互相独立、可选共存。
+'''
+
+[[mixins]]
+#config="${mod_id}.mixins.json"
+
+[[dependencies.${mod_id}]]
+    modId="neoforge"
+    type="required"
+    versionRange="[${neo_version},)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+# 星月模组（可选）：同时安装时星月也可获得"飞翔"附魔与空中突进
+[[dependencies.${mod_id}]]
+    modId="examplemod"
+    type="optional"
+    versionRange="[1.0.0,)"
+    ordering="NONE"
+    side="BOTH"
