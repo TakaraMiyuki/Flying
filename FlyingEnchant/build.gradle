@@ -49,6 +49,7 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
             mod_id                 : feModId,
             mod_name               : feModName,
             mod_license            : mod_license,
+            mod_authors            : project.property('flyingenchant.mod_authors'),
             mod_version            : mod_version,
     ]
     inputs.properties replaceProperties

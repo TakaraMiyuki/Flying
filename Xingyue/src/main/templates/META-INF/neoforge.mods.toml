@@ -36,11 +36,12 @@ displayName="${mod_name}" #mandatory
 #credits="" #optional
 
 # The authors of the mod, displayed in the mod UI (optional)
-#authors=""
+authors="${mod_authors}"
 
 # The description text for the mod (multi line!) (#mandatory)
 description='''
-Example mod description.
+原创武器"星月"：长按右键蓄力的范围爆发之剑。
+(Xingyue: an original sword with a charge-and-burst special attack.)
 '''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.

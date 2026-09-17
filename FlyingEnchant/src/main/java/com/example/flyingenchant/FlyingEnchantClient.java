@@ -1,7 +1,5 @@
 package com.example.flyingenchant;
 
-import com.mojang.logging.LogUtils;
-import org.slf4j.Logger;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -19,9 +17,6 @@ import net.neoforged.neoforge.client.network.ClientPacketDistributor;
  */
 @EventBusSubscriber(modid = FlyingEnchantMod.MODID, value = Dist.CLIENT)
 public final class FlyingEnchantClient {
-    private static final boolean DEBUG = true;
-    private static final Logger LOGGER = LogUtils.getLogger();
-
     private FlyingEnchantClient() {
     }
 
@@ -38,10 +33,7 @@ public final class FlyingEnchantClient {
         }
         while (mc.options.keyJump.consumeClick()) {
             if (!player.onGround()) {
-                if (DEBUG) LOGGER.info("【飞翔】空中跳跃键触发，发送突进请求");
                 ClientPacketDistributor.sendToServer(FlyingDashPayload.INSTANCE);
-            } else if (DEBUG) {
-                LOGGER.info("【飞翔】跳跃键点击但在地面，不发送");
             }
         }
     }

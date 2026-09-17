@@ -1,12 +1,16 @@
-license="All Rights Reserved"
+license="${mod_license}"
 
 [[mods]]
 modId="${mod_id}"
 version="${mod_version}"
 displayName="${mod_name}"
+
+# The authors of the mod, displayed in the mod UI
+authors="${mod_authors}"
 description='''
-飞翔（flying）附魔：让星月与重锤获得空中突进能力。
-与星月模组（examplemod）互相独立、可选共存。
+飞翔（flying）附魔：让重锤获得"空中突进"能力——下坠攻击触发风爆弹起后，按跳跃键即可向前上方突进。
+仅可作用于重锤与星月（重锤需先附魔风爆）；与星月模组（examplemod）互相独立、可选共存。
+(Flying: an enchantment for the Mace that grants an air dash after a wind burst bounce.)
 '''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.

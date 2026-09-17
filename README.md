@@ -1,25 +1,57 @@
+# 飞翔 (Flying) · 星月 (Xing Yue)
 
-Installation information
-=======
+一套为 **Minecraft Java 26.2 + NeoForge 26.2.0.88** 制作的原创内容模组，包含一个可公开发布的附魔模组与一个原创武器模组。
 
-This template repository can be directly cloned to get you started with a new
-mod. Simply create a new repository cloned from this one, by following the
-instructions provided by [GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template).
+---
 
-Once you have your clone, simply open the repository in the IDE of your choice. The usual recommendation for an IDE is either IntelliJ IDEA or Eclipse.
+## 飞翔 (flying_enchant) —— 公开发布的附魔模组
 
-If at any point you are missing libraries in your IDE, or you've run into problems you can
-run `gradlew --refresh-dependencies` to refresh the local cache. `gradlew clean` to reset everything 
-{this does not affect your code} and then start the process again.
+**"飞翔"是专为重锤设计的机动性附魔：下坠攻击触发风爆弹起后，按跳跃键即可在空中向前上方突进。**
 
-Mapping Names:
-============
-By default, the MDK is configured to use the official mapping names from Mojang for methods and fields 
-in the Minecraft codebase. These names are covered by a specific license. All modders should be aware of this
-license. For the latest license text, refer to the mapping file itself, or the reference copy here:
-https://github.com/NeoForged/NeoForm/blob/main/Mojang.md
+- **附魔对象**：仅重锤；与[星月模组](#星月-examplemod--原创武器模组)同时安装时也可作用于星月
+- **获取前提**：重锤必须**先附魔风爆 (Wind Burst)**，才能在铁砧应用飞翔附魔书（未附风爆时会被直接拒绝）
+- **等级**：Ⅰ 级突进约 3 格 / Ⅱ 级约 4 格，抬高约 0.5 / 1 格
+- **消耗**：每次突进损耗 1 点武器耐久、2 点饥饿（不受等级影响，创造模式豁免）
+- **限制**：饱食度不高于疾跑阈值（6 点）时无法突进；每次跃起只能突进一次，落地或下一次弹跳后刷新
+- **特效**：突进时脚下泛起白色风爆粒子并伴随风爆音效
 
-Additional Resources: 
-==========
-Community Documentation: https://docs.neoforged.net/  
-NeoForged Discord: https://discord.neoforged.net/
+### 安装组合
+
+| 安装组合 | 效果 |
+|---|---|
+| 仅飞翔 | 重锤可附魔飞翔并空中突进 |
+| 仅星月 | 使用星月武器（无飞翔附魔） |
+| 两者同装 | 星月与重锤均可附魔飞翔并空中突进 |
+
+> 兼容原理：两个模组通过共享物品标签 `#examplemod:enchantable/flying` 声明适用物品，数据包标签自动合并——任意安装组合均正确工作。
+
+### 安装
+
+1. 安装 [NeoForge 26.2.0.88](https://neoforged.net/)（兼容 26.2.0.82+）
+2. 将 `flying_enchant-1.0.0.jar` 放入 `mods/` 文件夹
+3. 铁砧合成"飞翔"附魔书（附魔台不出此附魔），先给重锤附风爆，再附飞翔
+
+## 星月 (examplemod) —— 原创武器模组
+
+**"星月"是一把蓄力爆发之剑**：长按右键蓄力（弓姿势），蓄力 45 刻自动爆发——对周围 3 格内实体造成 4 点伤害并击退，自身跃起约 5 格（落地免摔），迸发星月粒子。
+
+- 稀有度稀有、耐久 1680、面板 7 点攻击伤害，创造物品栏"战斗"分类
+- 支持风爆附魔（与飞翔/下坠攻击联动）
+- 与盾牌共持时无法蓄力，盾牌可正常格挡
+- 使用"飞翔"附魔后：跃起时按跳跃键可在空中向前上方突进
+
+> 星月模组暂不随本次发布分发 jar，源码在本仓库 `Xingyue/` 子项目，可自行构建。
+
+## 构建
+
+```bash
+./gradlew build                            # 构建两个模组（产物在各自 build/libs/）
+./gradlew dist --no-configuration-cache    # 将两个 jar 汇总到 dist/
+./gradlew :Xingyue:runClient               # 联调运行（同时加载两个模组）
+```
+
+要求 JDK 25。项目结构与开发环境说明见 [docs/README-SETUP.md](docs/README-SETUP.md)。
+
+## 许可
+
+[MIT License](LICENSE)。星月与飞翔的像素贴图为原创作品。
