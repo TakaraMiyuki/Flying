@@ -29,5 +29,4 @@ jobs:
         with:
           name: mod-jars
           path: |
-            Xingyue/build/libs/*.jar
-            FlyingEnchant/build/libs/*.jar
+            build/libs/*.jar

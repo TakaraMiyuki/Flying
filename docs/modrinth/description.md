@@ -20,7 +20,7 @@ Wind Burst already rewards smash attacks with a bounce — Flying turns that bou
 - Requires **Minecraft 26.2** with **NeoForge 26.2.0.88** (compatible with 26.2.0.82+), **Java 25**
 - Works in singleplayer and on servers; on servers the enchantment must be present for players to use it
 - **Server admins:** air dashing can be disabled server-wide with `/gamerule flyingDash false` (default `true`)
-- Optional companion mod **Xingyue** (source in the same [repository](https://github.com/TakaraMiyuki/Flying), jar not published yet): with both installed, the Xingyue sword can also take Flying — the two mods share an item tag, so any combination of the two mods works
+- Optional companion mod **Xingyue** ([github.com/TakaraMiyuki/Xingyue](https://github.com/TakaraMiyuki/Xingyue)): with both installed, the Xingyue sword can also take Flying — the two mods share an item tag, so any combination of the two mods works
 
 ## 获取方式 / How to obtain
 
@@ -43,7 +43,7 @@ Wind Burst already rewards smash attacks with a bounce — Flying turns that bou
 
 **服务器管理员**：`/gamerule flyingDash false` 可全服禁用空中突进（默认开启）。
 
-可选联动：同时安装星月模组（本仓库 `Xingyue/` 子项目，暂不发布 jar）时，星月剑也可获得飞翔附魔——两个模组通过共享物品标签联动，任意安装组合均正常工作。
+可选联动：同时安装[星月模组](https://github.com/TakaraMiyuki/Xingyue)时，星月剑也可获得飞翔附魔——两个模组通过共享物品标签联动，任意安装组合均正常工作。
 
 ## License
 
