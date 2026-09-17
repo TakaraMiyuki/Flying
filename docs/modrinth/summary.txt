@@ -1,0 +1,1 @@
+An enchantment for the Mace: dash forward-upward in mid-air after a wind-burst bounce. Server-controllable via /gamerule.

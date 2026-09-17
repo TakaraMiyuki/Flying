@@ -11,6 +11,9 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.world.level.gamerules.GameRule;
+import net.minecraft.world.level.gamerules.GameRuleCategory;
+import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -82,6 +85,13 @@ public final class FlyingEnchantMod {
     /** 跃起判定：本刻 Y 速度下限（须高于普通跳跃的 0.42）。 */
     public static final double LAUNCH_Y_MIN = 0.5;
 
+    /**
+     * 服务端开关（Modrinth 审核合规：为玩家提供机动能力的模组必须可由服务端禁用）。
+     * 管理员可用 /gamerule flyingDash false 全服禁用空中突进。
+     */
+    public static final GameRule<Boolean> FLYING_DASH_ENABLED =
+        GameRules.registerBoolean("flyingDash", GameRuleCategory.MISC, true);
+
     /** 服务端每刻记录的玩家 Y 速度，用于跃起反转检测。 */
     private static final Map<UUID, Double> LAST_Y_VEL = new HashMap<>();
     /** 处于跃起窗口（可突进）的玩家。 */
@@ -108,10 +118,14 @@ public final class FlyingEnchantMod {
     // 游戏总线：每刻采样垂直速度做跃起检测 + 落地关窗
     static void onPlayerTick(PlayerTickEvent.Post event) {
         Player player = event.getEntity();
-        if (player.level().isClientSide()) {
+        if (!(player.level() instanceof ServerLevel level)) {
             return;
         }
         UUID uuid = player.getUUID();
+        if (!level.getGameRules().get(FLYING_DASH_ENABLED)) {
+            LAST_Y_VEL.remove(uuid);
+            return;
+        }
         double yVel = player.getDeltaMovement().y;
         Double lastY = LAST_Y_VEL.put(uuid, yVel);
         // 强烈上升反转 = 一次跃起（弹跳发生时玩家可能尚有一刻触地，故先于落地判定）
@@ -170,6 +184,9 @@ public final class FlyingEnchantMod {
         }
         if (DASH_USED.contains(uuid)) {
             return; // 每次跃起限一次
+        }
+        if (!level.getGameRules().get(FLYING_DASH_ENABLED)) {
+            return; // 服务器管理员禁用了空中突进
         }
         ItemStack weapon = player.getMainHandItem();
         int flyingLevel = weapon.getEnchantmentLevel(enchantmentHolder(player, FLYING_KEY));
