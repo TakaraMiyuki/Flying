@@ -63,3 +63,17 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+
+// MDG 的内部工具任务（downloadAssets/createArtifacts）默认请求一个 Java 21 工具链，
+// 机器上没有已安装的 21 时会触发联网自动供应（foojay，需代理，IDEA 环境下易失败）。
+// 统一改用项目工具链（25）运行这些工具，避免对额外 JDK 的依赖。
+def moddevToolsLauncher = javaToolchains.launcherFor {
+    languageVersion = java.toolchain.languageVersion
+}
+tasks.withType(net.neoforged.nfrtgradle.DownloadAssets).configureEach {
+    javaExecutable = moddevToolsLauncher.map { it.executablePath.asFile.absolutePath }
+}
+tasks.withType(net.neoforged.nfrtgradle.CreateMinecraftArtifacts).configureEach {
+    toolsJavaExecutable = moddevToolsLauncher.map { it.executablePath.asFile.absolutePath }
+    javaExecutable = moddevToolsLauncher.map { it.executablePath.asFile.absolutePath }
+}
