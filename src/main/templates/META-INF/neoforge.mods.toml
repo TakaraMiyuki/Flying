@@ -10,7 +10,8 @@ authors="${mod_authors}"
 description='''
 飞翔（flying）附魔：让重锤获得"空中突进"能力——下坠攻击触发风爆弹起后，按跳跃键即可向前上方突进。
 仅可作用于重锤与星月（重锤需先附魔风爆）；与星月模组（xingyue）互相独立、可选共存。
-(Flying: an enchantment for the Mace that grants an air dash after a wind burst bounce.)
+1.2.0 起新增同名状态效果（flying_enchant:flying）：持有效果时疾跑按跳跃键即可突进，除玩家外所有生物免疫。
+(Flying: a Mace air-dash enchantment, plus a Flying mob effect — sprint + jump to dash; non-players are immune.)
 '''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.

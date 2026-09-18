@@ -11,6 +11,15 @@
 - **Once per launch:** the dash refreshes on landing, or on the next wind-burst bounce when chaining smashes
 - Effects: a small ring of white wind particles at your feet and the wind-burst sound
 
+## Mob effect version (1.2.0+)
+
+- New status effect **`flying_enchant:flying`** — coexists with the enchantment, fully independent
+- While under the effect, press **jump while sprinting** to dash forward-upward (~2 blocks each axis)
+- Vertical velocity is reset on dash (same fallspeed-reset behavior as the enchantment); costs **1 hunger** per dash, 10-tick cooldown
+- Applied via `/effect give @s flying_enchant:flying 30`, datapacks, or other mods — no brewing recipe on purpose
+- **All non-player entities are immune** to the effect
+- Shares the `/gamerule flyingDash` switch and the sprint food threshold with the enchantment
+
 ## Why download it
 
 Wind Burst already rewards smash attacks with a bounce — Flying turns that bounce into momentum. Chain smash → bounce → dash → smash across a battlefield, or use the dash as an escape tool.
@@ -19,7 +28,7 @@ Wind Burst already rewards smash attacks with a bounce — Flying turns that bou
 
 - Requires **Minecraft 26.2** with **NeoForge 26.2.0.88** (compatible with 26.2.0.82+), **Java 25**
 - Works in singleplayer and on servers; on servers the enchantment must be present for players to use it
-- **Server admins:** air dashing can be disabled server-wide with `/gamerule flyingDash false` (default `true`)
+- **Server admins:** air dashing (both the enchantment and the mob effect) can be disabled server-wide with `/gamerule flyingDash false` (default `true`)
 - Optional companion mod **Xingyue** ([github.com/TakaraMiyuki/Xingyue](https://github.com/TakaraMiyuki/Xingyue)): with both installed, the Xingyue sword can also take Flying — the two mods share an item tag, so any combination of the two mods works
 
 ## 获取方式 / How to obtain
@@ -41,7 +50,9 @@ Wind Burst already rewards smash attacks with a bounce — Flying turns that bou
 - **每次跃起限一次**：落地或下一次风爆弹跳后刷新资格
 - 特效：脚下泛起白色风爆粒子并伴随风爆音效
 
-**服务器管理员**：`/gamerule flyingDash false` 可全服禁用空中突进（默认开启）。
+**状态效果版（1.2.0+）**：新增状态效果 `flying_enchant:flying`，与附魔版并存互不影响。持有效果期间**疾跑状态下按跳跃键**即可向前上方突进（水平约 2 格、抬高约 2 格），发动时整体重置下坠速度；每次消耗 1 点饥饿、10 刻冷却。效果通过 `/effect give @s flying_enchant:flying 30`、数据包或其他模组施加；**除玩家以外的所有生物免疫**。与附魔版共用 gamerule 与饱食度门槛。
+
+**服务器管理员**：`/gamerule flyingDash false` 可全服禁用突进（附魔版与效果版同时受管辖，默认开启）。
 
 可选联动：同时安装[星月模组](https://github.com/TakaraMiyuki/Xingyue)时，星月剑也可获得飞翔附魔——两个模组通过共享物品标签联动，任意安装组合均正常工作。
 
