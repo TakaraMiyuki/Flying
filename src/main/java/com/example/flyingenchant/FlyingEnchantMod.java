@@ -71,9 +71,12 @@ import net.minecraft.world.flag.FeatureFlagSet;
  *
  * <p>此外提供一个同名的<b>状态效果</b> {@code flying_enchant:flying}（附魔版的独立通道，两者并存）：
  * 持有该效果的玩家在<b>疾跑状态下按跳跃键</b>即可向前上方突进（水平 ≈2 格、抬高 ≈2 格），
- * 每次消耗 1 点饥饿、突进时同样整体重置垂直速度（继承附魔版的"发动时重置下坠"特性）。
+ * 空中不限次数（每 10 刻冷却），每次消耗 1 点饥饿、突进时同样整体重置垂直速度（继承附魔版的
+ * "发动时重置下坠"特性）。疾跑标志由客户端随请求包上送（服务端镜像会脱同步，不可信）。
+ * <b>双持仲裁</b>：同时拥有附魔与效果时，跃起窗口内的请求优先走附魔通道（消耗其一次机会），
+ * 附魔不可用后落到效果通道；风爆跃起重置附魔状态后附魔通道重新优先。
  * 效果通过 /effect give、数据包或其他模组施加，持续时长由施加者决定；本模组不主动施加。
- * 同样受 gamerule {@code flying_enchant:flying_dash} 管辖与饱食度门槛限制；每玩家另有 10 刻冷却防连按刷屏。
+ * 同样受 gamerule {@code flying_enchant:flying_dash} 管辖与饱食度门槛限制。
  * 除玩家以外的所有生物免疫该效果（MobEffectEvent.Applicable 守卫返回 DO_NOT_APPLY）。</p>
  */
 @Mod(FlyingEnchantMod.MODID)
@@ -160,11 +163,10 @@ public final class FlyingEnchantMod {
 
     // mod bus：注册服务端 payload 处理器
     private void onRegisterPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("1");
+        // 版本 2：包新增 sprinting 标志（1.x 旧客户端混装会被明确拒绝而非误读）
+        PayloadRegistrar registrar = event.registrar("2");
         registrar.playToServer(FlyingDashPayload.TYPE, FlyingDashPayload.STREAM_CODEC,
-            (payload, context) -> handleDashRequest(context.player()));
-        registrar.playToServer(FlyingEffectDashPayload.TYPE, FlyingEffectDashPayload.STREAM_CODEC,
-            (payload, context) -> handleEffectDashRequest(context.player()));
+            (payload, context) -> handleDashRequest(context.player(), payload.sprinting()));
     }
 
     // 游戏总线：除玩家以外的所有生物免疫飞翔效果
@@ -234,82 +236,16 @@ public final class FlyingEnchantMod {
         }
     }
 
-    // 服务端：全量校验后执行突进（客户端请求不携带任何数据，伪造发包无法绕过限制）
-    private static void handleDashRequest(Player basePlayer) {
+    // 服务端：统一突进仲裁（附魔优先 → 效果）。全量校验均在服务端，伪造发包无法绕过限制。
+    // 效果通道的疾跑门槛采用客户端上送的标志：服务端的疾跑镜像会经 moved-wrongly 回退/碰撞
+    // 脱同步，不可信；伪造该标志仅能绕过"疾跑"这一体验性门槛，安全门仍全部在服务端强制。
+    private static void handleDashRequest(Player basePlayer, boolean clientSprinting) {
         if (!(basePlayer instanceof ServerPlayer player) || !(player.level() instanceof ServerLevel level)) {
             return;
         }
         UUID uuid = player.getUUID();
-        if (player.onGround() || !LAUNCHED.contains(uuid)) {
-            return; // 必须处于跃起窗口内
-        }
-        if (DASH_USED.contains(uuid)) {
-            return; // 每次跃起限一次
-        }
-        if (!level.getGameRules().get(FLYING_DASH_ENABLED.value())) {
-            return; // 服务器管理员禁用了空中突进
-        }
-        ItemStack weapon = player.getMainHandItem();
-        int flyingLevel = weapon.getEnchantmentLevel(enchantmentHolder(player, FLYING_KEY));
-        if (flyingLevel <= 0 || !weapon.is(FLYING_ENCHANTABLE)) {
-            return; // 主手必须为飞翔适用物品（由共享 tag 决定）且已附魔飞翔
-        }
-        if (!player.hasInfiniteMaterials() && player.getFoodData().getFoodLevel() <= SPRINT_FOOD_THRESHOLD) {
-            return; // 饱食度不足（与疾跑同门槛）
-        }
-
-        // 前上方突进：视线水平方向（归一化，俯视不减距）× 等级速度，叠加到水平动量上；
-        // 垂直分量整体重置为固定上抬——否则爆发下坠阶段的负速度会把突进抵消掉
-        Vec3 look = player.getLookAngle();
-        Vec3 horizontal = new Vec3(look.x, 0.0, look.z);
-        horizontal = horizontal.lengthSqr() > 1.0E-4
-            ? horizontal.normalize()
-            : Vec3.directionFromRotation(0.0F, player.getYRot());
-        double speed = DASH_SPEED_BASE + DASH_SPEED_PER_LEVEL * (flyingLevel - 1);
-        double up = DASH_UP_BASE + DASH_UP_PER_LEVEL * (flyingLevel - 1);
-        player.setDeltaMovement(player.getDeltaMovement().add(horizontal.scale(speed)).with(Direction.Axis.Y, up));
-        player.applyPostImpulseGraceTime(10);
-        player.connection.send(new ClientboundSetEntityMotionPacket(player));
-
-        // 特效：脚下少量白色风爆粒子 + 风爆音效
-        for (int i = 0; i < 6; i++) {
-            double angle = i * (Math.PI * 2 / 6.0);
-            level.sendParticles(ParticleTypes.SMALL_GUST,
-                player.getX() + Math.cos(angle) * 0.8, player.getY() + 0.1, player.getZ() + Math.sin(angle) * 0.8,
-                1, 0.0, 0.0, 0.0, 0.0);
-        }
-        level.playSound(null, player.getX(), player.getY(), player.getZ(),
-            SoundEvents.BREEZE_WIND_CHARGE_BURST, SoundSource.PLAYERS, 1.0F, 1.0F);
-
-        // 消耗：1 点武器耐久（创造自动豁免）+ 2 点饥饿（仅生存）
-        weapon.hurtAndBreak(1, player, InteractionHand.MAIN_HAND);
-        if (!player.hasInfiniteMaterials()) {
-            player.getFoodData().setFoodLevel(Math.max(0, player.getFoodData().getFoodLevel() - DASH_HUNGER_COST));
-        }
-        DASH_USED.add(uuid);
-    }
-
-    // 服务端：效果版突进（疾跑起跳 / 空中接续）；与附魔版独立，不校验跃起窗口/附魔/tag。
-    // 不校验 isSprinting：疾跑标志是客户端单向同步的镜像，moved-wrongly 回退/碰撞会让其
-    // 脱同步（客户端视觉仍在疾跑而服务端标志为 false），硬校验会导致突进间歇性失效。
-    // 疾跑门槛由客户端预筛执行；服务端保留安全门：效果持有、gamerule、冷却、饱食度。
-    private static void handleEffectDashRequest(Player basePlayer) {
-        if (!(basePlayer instanceof ServerPlayer player) || !(player.level() instanceof ServerLevel level)) {
-            return;
-        }
-        if (!player.hasEffect(FLYING_EFFECT)) {
-            reject(player, "no flying effect");
-            return;
-        }
         if (!level.getGameRules().get(FLYING_DASH_ENABLED.value())) {
             reject(player, "gamerule flying_dash disabled");
-            return;
-        }
-        UUID uuid = player.getUUID();
-        long now = level.getGameTime();
-        Long until = EFFECT_DASH_COOLDOWN_UNTIL.get(uuid);
-        if (until != null && now < until) {
-            reject(player, "cooldown (" + (until - now) + " ticks left)");
             return;
         }
         if (!player.hasInfiniteMaterials() && player.getFoodData().getFoodLevel() <= SPRINT_FOOD_THRESHOLD) {
@@ -317,20 +253,85 @@ public final class FlyingEnchantMod {
             return;
         }
 
-        // 前上方突进：视线水平方向 × 固定速度，垂直分量整体重置为上抬（继承附魔版"发动时重置下坠速度"特性）
-        Vec3 look = player.getLookAngle();
-        Vec3 horizontal = new Vec3(look.x, 0.0, look.z);
-        horizontal = horizontal.lengthSqr() > 1.0E-4
-            ? horizontal.normalize()
-            : Vec3.directionFromRotation(0.0F, player.getYRot());
+        // 优先级 1：附魔通道——跃起窗口内、本次跃起未用、主手为适用物品且已附魔飞翔
+        if (!player.onGround() && LAUNCHED.contains(uuid) && !DASH_USED.contains(uuid)) {
+            ItemStack weapon = player.getMainHandItem();
+            int flyingLevel = weapon.getEnchantmentLevel(enchantmentHolder(player, FLYING_KEY));
+            if (flyingLevel > 0 && weapon.is(FLYING_ENCHANTABLE)) {
+                dashByEnchant(player, level, uuid, weapon, flyingLevel);
+                return;
+            }
+        }
+
+        // 优先级 2：效果通道——疾跑（客户端标志）+ 持有效果 + 10 刻冷却；空中不限次数
+        if (!clientSprinting) {
+            reject(player, "not sprinting (client flag)");
+            return;
+        }
+        if (!player.hasEffect(FLYING_EFFECT)) {
+            reject(player, "no flying effect");
+            return;
+        }
+        long now = level.getGameTime();
+        Long until = EFFECT_DASH_COOLDOWN_UNTIL.get(uuid);
+        if (until != null && now < until) {
+            reject(player, "cooldown (" + (until - now) + " ticks left)");
+            return;
+        }
+        dashByEffect(player, level, uuid, now);
+    }
+
+    // 附魔通道：等级速度前上方突进，垂直整体重置（否则下坠负速度会抵消突进）；消耗 1 耐久 + 2 饥饿；本次跃起标记已用
+    private static void dashByEnchant(ServerPlayer player, ServerLevel level, UUID uuid, ItemStack weapon, int flyingLevel) {
+        Vec3 horizontal = horizontalLook(player);
+        double speed = DASH_SPEED_BASE + DASH_SPEED_PER_LEVEL * (flyingLevel - 1);
+        double up = DASH_UP_BASE + DASH_UP_PER_LEVEL * (flyingLevel - 1);
+        player.setDeltaMovement(player.getDeltaMovement().add(horizontal.scale(speed)).with(Direction.Axis.Y, up));
+        player.applyPostImpulseGraceTime(10);
+        player.connection.send(new ClientboundSetEntityMotionPacket(player));
+        dashFX(level, player);
+        weapon.hurtAndBreak(1, player, InteractionHand.MAIN_HAND);
+        if (!player.hasInfiniteMaterials()) {
+            player.getFoodData().setFoodLevel(Math.max(0, player.getFoodData().getFoodLevel() - DASH_HUNGER_COST));
+        }
+        DASH_USED.add(uuid);
+        if (DEBUG_DASH) {
+            LOGGER.info("[FlyingDash] enchant dash lv{} for {}", flyingLevel, player.getName().getString());
+        }
+    }
+
+    // 效果通道：固定速度前上方突进，垂直整体重置（继承附魔版"发动时重置下坠速度"特性）；消耗 1 饥饿；10 刻冷却
+    private static void dashByEffect(ServerPlayer player, ServerLevel level, UUID uuid, long now) {
+        Vec3 horizontal = horizontalLook(player);
         player.setDeltaMovement(player.getDeltaMovement().add(horizontal.scale(EFFECT_DASH_SPEED))
             .with(Direction.Axis.Y, EFFECT_DASH_UP));
         // 宽限须覆盖整个飞行段（上2格+下落 ≈14 刻）直至落地，否则宽限外的滞空段会
         // 触发服务端 moved-wrongly 校验（残差 >0.25 格）→ 瞬移回退 + 双方速度清零
         player.applyPostImpulseGraceTime(20);
         player.connection.send(new ClientboundSetEntityMotionPacket(player));
+        dashFX(level, player);
+        if (!player.hasInfiniteMaterials()) {
+            player.getFoodData().setFoodLevel(
+                Math.max(0, player.getFoodData().getFoodLevel() - EFFECT_DASH_HUNGER_COST));
+        }
+        EFFECT_DASH_COOLDOWN_UNTIL.put(uuid, now + EFFECT_DASH_COOLDOWN_TICKS);
+        if (DEBUG_DASH) {
+            LOGGER.info("[FlyingDash] effect dash for {} (sprint={}, ground={})",
+                player.getName().getString(), player.isSprinting(), player.onGround());
+        }
+    }
 
-        // 特效：脚下少量白色风爆粒子 + 风爆音效（与附魔版同款）
+    // 视线水平归一化方向（俯视不减距；完全垂直时退化为面朝方向）
+    private static Vec3 horizontalLook(ServerPlayer player) {
+        Vec3 look = player.getLookAngle();
+        Vec3 horizontal = new Vec3(look.x, 0.0, look.z);
+        return horizontal.lengthSqr() > 1.0E-4
+            ? horizontal.normalize()
+            : Vec3.directionFromRotation(0.0F, player.getYRot());
+    }
+
+    // 特效：脚下少量白色风爆粒子 + 风爆音效
+    private static void dashFX(ServerLevel level, ServerPlayer player) {
         for (int i = 0; i < 6; i++) {
             double angle = i * (Math.PI * 2 / 6.0);
             level.sendParticles(ParticleTypes.SMALL_GUST,
@@ -339,22 +340,11 @@ public final class FlyingEnchantMod {
         }
         level.playSound(null, player.getX(), player.getY(), player.getZ(),
             SoundEvents.BREEZE_WIND_CHARGE_BURST, SoundSource.PLAYERS, 1.0F, 1.0F);
-
-        // 消耗：仅 1 点饥饿（效果不绑定武器，无耐久消耗；创造豁免）；进入 10 刻冷却
-        if (!player.hasInfiniteMaterials()) {
-            player.getFoodData().setFoodLevel(
-                Math.max(0, player.getFoodData().getFoodLevel() - EFFECT_DASH_HUNGER_COST));
-        }
-        EFFECT_DASH_COOLDOWN_UNTIL.put(uuid, now + EFFECT_DASH_COOLDOWN_TICKS);
-        if (DEBUG_DASH) {
-            LOGGER.info("[FlyingEffectDash] dash executed for {} (sprint={}, ground={})",
-                player.getName().getString(), player.isSprinting(), player.onGround());
-        }
     }
 
     private static void reject(ServerPlayer player, String reason) {
         if (DEBUG_DASH) {
-            LOGGER.info("[FlyingEffectDash] rejected for {}: {}", player.getName().getString(), reason);
+            LOGGER.info("[FlyingDash] rejected for {}: {}", player.getName().getString(), reason);
         }
     }
 
