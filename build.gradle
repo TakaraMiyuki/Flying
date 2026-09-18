@@ -31,6 +31,9 @@ neoForge {
     }
 
     mods {
+        flying_enchant {
+            sourceSet sourceSets.main
+        }
     }
 }
 

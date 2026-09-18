@@ -6,6 +6,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.serialization.Codec;
+
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
@@ -13,7 +16,8 @@ import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.gamerules.GameRule;
 import net.minecraft.world.level.gamerules.GameRuleCategory;
-import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.gamerules.GameRuleType;
+import net.minecraft.world.level.gamerules.GameRuleTypeVisitor;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -43,6 +47,7 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
+import net.minecraft.world.flag.FeatureFlagSet;
 
 /**
  * 飞翔（flying）附魔模组。独立模组，可单独安装；与星月模组（xingyue）共存时联动。
@@ -65,7 +70,7 @@ import net.neoforged.neoforge.registries.DeferredRegister;
  * 持有该效果的玩家在<b>疾跑状态下按跳跃键</b>即可向前上方突进（水平 ≈2 格、抬高 ≈2 格），
  * 每次消耗 1 点饥饿、突进时同样整体重置垂直速度（继承附魔版的"发动时重置下坠"特性）。
  * 效果通过 /effect give、数据包或其他模组施加，持续时长由施加者决定；本模组不主动施加。
- * 同样受 gamerule {@code flyingDash} 管辖与饱食度门槛限制；每玩家另有 10 刻冷却防连按刷屏。
+ * 同样受 gamerule {@code flying_enchant:flying_dash} 管辖与饱食度门槛限制；每玩家另有 10 刻冷却防连按刷屏。
  * 除玩家以外的所有生物免疫该效果（MobEffectEvent.Applicable 守卫返回 DO_NOT_APPLY）。</p>
  */
 @Mod(FlyingEnchantMod.MODID)
@@ -112,11 +117,19 @@ public final class FlyingEnchantMod {
     public static final double LAUNCH_Y_MIN = 0.5;
 
     /**
-     * 服务端开关（Modrinth 审核合规：为玩家提供机动能力的模组必须可由服务端禁用）。
-     * 管理员可用 /gamerule flyingDash false 全服禁用空中突进。
+     * mod 总线注册器：服务端开关 gamerule（Modrinth 审核合规：为玩家提供机动能力的模组必须可由服务端禁用）。
+     * 管理员可用 {@code /gamerule flying_enchant:flying_dash false} 全服禁用突进。
+     * <p>26.2 的 gamerule 是注册表驱动（{@code minecraft:game_rule}），必须在冻结前的注册阶段
+     * 经 DeferredRegister 注册；mod 构造期直接调 {@code GameRules.registerBoolean} 会因注册表
+     * 已冻结而崩溃，且 id 必须全小写。挂在 minecraft 命名空间之外的 {@code flying_enchant:flying_dash}。</p>
      */
-    public static final GameRule<Boolean> FLYING_DASH_ENABLED =
-        GameRules.registerBoolean("flyingDash", GameRuleCategory.MISC, true);
+    private static final DeferredRegister<GameRule<?>> GAME_RULES =
+        DeferredRegister.create(Registries.GAME_RULE, MODID);
+    public static final DeferredHolder<GameRule<?>, GameRule<Boolean>> FLYING_DASH_ENABLED =
+        GAME_RULES.register("flying_dash", () -> new GameRule<>(
+            GameRuleCategory.MISC, GameRuleType.BOOL, BoolArgumentType.bool(),
+            GameRuleTypeVisitor::visitBoolean, Codec.BOOL, b -> b ? 1 : 0,
+            true, FeatureFlagSet.of()));
 
     /** 服务端每刻记录的玩家 Y 速度，用于跃起反转检测。 */
     private static final Map<UUID, Double> LAST_Y_VEL = new HashMap<>();
@@ -128,8 +141,9 @@ public final class FlyingEnchantMod {
     private static final Map<UUID, Long> EFFECT_DASH_COOLDOWN_UNTIL = new HashMap<>();
 
     public FlyingEnchantMod(IEventBus modEventBus) {
-        // mod bus：状态效果注册、网络包注册
+        // mod bus：状态效果、gamerule、网络包注册
         MOB_EFFECTS.register(modEventBus);
+        GAME_RULES.register(modEventBus);
         modEventBus.addListener(this::onRegisterPayloads);
         // 游戏总线：跃起检测（突进窗口）、铁砧风爆前置否决、退出清理、非玩家免疫飞翔效果
         NeoForge.EVENT_BUS.addListener(FlyingEnchantMod::onPlayerTick);
@@ -162,7 +176,7 @@ public final class FlyingEnchantMod {
             return;
         }
         UUID uuid = player.getUUID();
-        if (!level.getGameRules().get(FLYING_DASH_ENABLED)) {
+        if (!level.getGameRules().get(FLYING_DASH_ENABLED.value())) {
             LAST_Y_VEL.remove(uuid);
             return;
         }
@@ -226,7 +240,7 @@ public final class FlyingEnchantMod {
         if (DASH_USED.contains(uuid)) {
             return; // 每次跃起限一次
         }
-        if (!level.getGameRules().get(FLYING_DASH_ENABLED)) {
+        if (!level.getGameRules().get(FLYING_DASH_ENABLED.value())) {
             return; // 服务器管理员禁用了空中突进
         }
         ItemStack weapon = player.getMainHandItem();
@@ -280,7 +294,7 @@ public final class FlyingEnchantMod {
         if (!player.isSprinting()) {
             return; // 必须处于疾跑状态
         }
-        if (!level.getGameRules().get(FLYING_DASH_ENABLED)) {
+        if (!level.getGameRules().get(FLYING_DASH_ENABLED.value())) {
             return; // 服务器管理员禁用了飞翔突进
         }
         UUID uuid = player.getUUID();

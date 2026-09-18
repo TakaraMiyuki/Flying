@@ -23,7 +23,7 @@
 
 ## 服务端开关
 
-服务器管理员可用 `/gamerule flyingDash false` 全服禁用突进（附魔版与效果版同时受管辖；默认开启，`true` 恢复）。
+服务器管理员可用 `/gamerule flying_enchant:flying_dash false` 全服禁用突进（附魔版与效果版同时受管辖；默认开启，`true` 恢复）。
 
 ## 安装
 
