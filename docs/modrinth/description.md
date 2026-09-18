@@ -13,10 +13,12 @@
 
 ## Mob effect version (1.2.0+)
 
-- New status effect **`flying_enchant:flying`** — coexists with the enchantment, fully independent
-- While under the effect, press **jump while sprinting** to dash forward-upward (~2 blocks each axis)
-- Vertical velocity is reset on dash (same fallspeed-reset behavior as the enchantment); costs **1 hunger** per dash, 10-tick cooldown
-- Applied via `/effect give @s flying_enchant:flying 30`, datapacks, or other mods — no brewing recipe on purpose
+- New status effect **`flying_enchant:flying`** (Lv I-II) — coexists with the enchantment, fully independent
+- While under the effect, press **jump while sprinting** to dash forward-upward; unlimited mid-air dashes while sprinting (10-tick cooldown)
+- Lv I: ~2 blocks forward / ~2 up - Lv II: ~5 forward / ~3 up (`/effect give @s flying_enchant:flying 30 1`)
+- Vertical velocity is reset on dash (same fallspeed-reset behavior as the enchantment); costs **0.5 hunger** per dash (creative immune)
+- Applied via `/effect give`, datapacks, or other mods — no brewing recipe on purpose
+- With both the enchantment and the effect, the enchantment's once-per-launch dash is spent first
 - **All non-player entities are immune** to the effect
 - Shares the `/gamerule flying_enchant:flying_dash` switch and the sprint food threshold with the enchantment
 
@@ -50,7 +52,7 @@ Wind Burst already rewards smash attacks with a bounce — Flying turns that bou
 - **每次跃起限一次**：落地或下一次风爆弹跳后刷新资格
 - 特效：脚下泛起白色风爆粒子并伴随风爆音效
 
-**状态效果版（1.2.0+）**：新增状态效果 `flying_enchant:flying`，与附魔版并存互不影响。持有效果期间**疾跑状态下按跳跃键**即可向前上方突进（水平约 2 格、抬高约 2 格），发动时整体重置下坠速度；每次消耗 1 点饥饿、10 刻冷却。效果通过 `/effect give @s flying_enchant:flying 30`、数据包或其他模组施加；**除玩家以外的所有生物免疫**。与附魔版共用 gamerule 与饱食度门槛。
+**状态效果版（1.2.0+）**：新增状态效果 `flying_enchant:flying`（1-2 级），与附魔版并存互不影响。持有效果期间**疾跑状态下按跳跃键**即可向前上方突进，疾跑中空中不限次数连发（每 10 刻冷却）；一级水平约 2 格/上 2 格，二级约 5 格/上 3 格（`/effect give @s flying_enchant:flying 30 1`）；发动时整体重置下坠速度；每次消耗 0.5 点饥饿（创造豁免）。效果通过 `/effect give`、数据包或其他模组施加；**除玩家以外的所有生物免疫**。同持附魔时优先消耗附魔的一次跃起，再落到效果连发。与附魔版共用 gamerule 与饱食度门槛。
 
 **服务器管理员**：`/gamerule flying_enchant:flying_dash false` 可全服禁用突进（附魔版与效果版同时受管辖，默认开启）。
 
