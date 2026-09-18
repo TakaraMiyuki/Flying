@@ -32,6 +32,7 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -70,9 +71,11 @@ import net.minecraft.world.flag.FeatureFlagSet;
  * <p>本模组与星月模组零编译依赖（双向），联动仅通过共享 item tag 与客户端输入（本模组自己的 payload）。</p>
  *
  * <p>此外提供一个同名的<b>状态效果</b> {@code flying_enchant:flying}（附魔版的独立通道，两者并存）：
- * 持有该效果的玩家在<b>疾跑状态下按跳跃键</b>即可向前上方突进（水平 ≈2 格、抬高 ≈2 格），
- * 空中不限次数（每 10 刻冷却），每次消耗 1 点饥饿、突进时同样整体重置垂直速度（继承附魔版的
- * "发动时重置下坠"特性）。疾跑标志由客户端随请求包上送（服务端镜像会脱同步，不可信）。
+ * 持有该效果的玩家在<b>疾跑状态下按跳跃键</b>即可向前上方突进，空中不限次数（每 10 刻冷却），
+ * 突进时整体重置垂直速度（继承附魔版的"发动时重置下坠"特性）。
+ * 等级（/effect 的 amplifier）：一级 ≈水平2格/上2格，二级 ≈水平5格/上3格（更高线性外推）；
+ * 每次消耗 0.5 点饥饿（半点累积器，攒满 2 个半点扣 1 点）。疾跑标志由客户端随请求包上送
+ * （服务端镜像会脱同步，不可信）。
  * <b>双持仲裁</b>：同时拥有附魔与效果时，跃起窗口内的请求优先走附魔通道（消耗其一次机会），
  * 附魔不可用后落到效果通道；风爆跃起重置附魔状态后附魔通道重新优先。
  * 效果通过 /effect give、数据包或其他模组施加，持续时长由施加者决定；本模组不主动施加。
@@ -111,12 +114,16 @@ public final class FlyingEnchantMod {
     /** 飞翔状态效果：纯标记效果，突进逻辑在 {@link #handleEffectDashRequest}。 */
     public static final DeferredHolder<MobEffect, FlyingEffect> FLYING_EFFECT =
         MOB_EFFECTS.register("flying", FlyingEffect::new);
-    /** 效果版突进水平初速：≈2 格（空中阻力 0.91/刻）。 */
-    public static final double EFFECT_DASH_SPEED = 0.30;
-    /** 效果版突进向上初速：≈2 格高（整体重置垂直速度，与附魔版同机制）。 */
-    public static final double EFFECT_DASH_UP = 0.55;
-    /** 效果版每次突进消耗的饥饿值（点）。 */
-    public static final int EFFECT_DASH_HUNGER_COST = 1;
+    /** 效果版突进水平初速：一级（amplifier 0）≈2 格（空中阻力 0.91/刻）。 */
+    public static final double EFFECT_DASH_SPEED_BASE = 0.30;
+    /** 效果版每级水平初速增量：二级（amplifier 1）≈5 格。 */
+    public static final double EFFECT_DASH_SPEED_PER_LEVEL = 0.43;
+    /** 效果版突进向上初速：一级 ≈2 格高（整体重置垂直速度，与附魔版同机制）。 */
+    public static final double EFFECT_DASH_UP_BASE = 0.55;
+    /** 效果版每级向上初速增量：二级 ≈3 格高。 */
+    public static final double EFFECT_DASH_UP_PER_LEVEL = 0.17;
+    /** 效果版每次突进消耗的饥饿值（半点）：0.5 点，攒满 2 个半点扣 1 点。 */
+    public static final int EFFECT_DASH_HUNGER_HALF_COST = 1;
     /** 效果版突进冷却（刻），防疾跑连按跳跃刷屏。 */
     public static final int EFFECT_DASH_COOLDOWN_TICKS = 10;
 
@@ -148,6 +155,8 @@ public final class FlyingEnchantMod {
     private static final Set<UUID> DASH_USED = new HashSet<>();
     /** 效果版突进冷却截止刻（游戏刻，按玩家维度记录）。 */
     private static final Map<UUID, Long> EFFECT_DASH_COOLDOWN_UNTIL = new HashMap<>();
+    /** 效果版饥饿扣费的半点累积器：每次 0.5 点，攒满 2 个半点扣 1 点（FoodData 只支持整数）。 */
+    private static final Map<UUID, Integer> EFFECT_DASH_HUNGER_HALF = new HashMap<>();
 
     public FlyingEnchantMod(IEventBus modEventBus) {
         // mod bus：状态效果、gamerule、网络包注册
@@ -213,6 +222,7 @@ public final class FlyingEnchantMod {
         LAUNCHED.remove(uuid);
         DASH_USED.remove(uuid);
         EFFECT_DASH_COOLDOWN_UNTIL.remove(uuid);
+        EFFECT_DASH_HUNGER_HALF.remove(uuid);
     }
 
     // 游戏总线：重锤必须已附魔风爆，铁砧才允许为其应用飞翔附魔书
@@ -300,24 +310,34 @@ public final class FlyingEnchantMod {
         }
     }
 
-    // 效果通道：固定速度前上方突进，垂直整体重置（继承附魔版"发动时重置下坠速度"特性）；消耗 1 饥饿；10 刻冷却
+    // 效果通道：固定速度前上方突进，垂直整体重置（继承附魔版"发动时重置下坠速度"特性）；
+    // 消耗 0.5 饥饿（半点累积器）；10 刻冷却。等级（amplifier）缩放突进距离：
+    // 一级 ≈水平2格/上2格，二级 ≈水平5格/上3格，更高等级线性外推。
     private static void dashByEffect(ServerPlayer player, ServerLevel level, UUID uuid, long now) {
+        MobEffectInstance effect = player.getEffect(FLYING_EFFECT);
+        int amplifier = effect == null ? 0 : effect.getAmplifier();
+        double speed = EFFECT_DASH_SPEED_BASE + EFFECT_DASH_SPEED_PER_LEVEL * amplifier;
+        double up = EFFECT_DASH_UP_BASE + EFFECT_DASH_UP_PER_LEVEL * amplifier;
         Vec3 horizontal = horizontalLook(player);
-        player.setDeltaMovement(player.getDeltaMovement().add(horizontal.scale(EFFECT_DASH_SPEED))
-            .with(Direction.Axis.Y, EFFECT_DASH_UP));
-        // 宽限须覆盖整个飞行段（上2格+下落 ≈14 刻）直至落地，否则宽限外的滞空段会
+        player.setDeltaMovement(player.getDeltaMovement().add(horizontal.scale(speed))
+            .with(Direction.Axis.Y, up));
+        // 宽限须覆盖整个飞行段（二级上3格+下落 ≈20 刻）直至落地，否则宽限外的滞空段会
         // 触发服务端 moved-wrongly 校验（残差 >0.25 格）→ 瞬移回退 + 双方速度清零
-        player.applyPostImpulseGraceTime(20);
+        player.applyPostImpulseGraceTime(25);
         player.connection.send(new ClientboundSetEntityMotionPacket(player));
         dashFX(level, player);
         if (!player.hasInfiniteMaterials()) {
-            player.getFoodData().setFoodLevel(
-                Math.max(0, player.getFoodData().getFoodLevel() - EFFECT_DASH_HUNGER_COST));
+            int halves = EFFECT_DASH_HUNGER_HALF.merge(uuid, EFFECT_DASH_HUNGER_HALF_COST, Integer::sum);
+            while (halves >= 2) {
+                halves -= 2;
+                player.getFoodData().setFoodLevel(Math.max(0, player.getFoodData().getFoodLevel() - 1));
+            }
+            EFFECT_DASH_HUNGER_HALF.put(uuid, halves);
         }
         EFFECT_DASH_COOLDOWN_UNTIL.put(uuid, now + EFFECT_DASH_COOLDOWN_TICKS);
         if (DEBUG_DASH) {
-            LOGGER.info("[FlyingDash] effect dash for {} (sprint={}, ground={})",
-                player.getName().getString(), player.isSprinting(), player.onGround());
+            LOGGER.info("[FlyingDash] effect dash amp{} for {} (speed={}, up={}, sprint={}, ground={})",
+                amplifier, player.getName().getString(), speed, up, player.isSprinting(), player.onGround());
         }
     }
 
