@@ -7,7 +7,10 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.logging.LogUtils;
 import com.mojang.serialization.Codec;
+
+import org.slf4j.Logger;
 
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
@@ -76,6 +79,9 @@ import net.minecraft.world.flag.FeatureFlagSet;
 @Mod(FlyingEnchantMod.MODID)
 public final class FlyingEnchantMod {
     public static final String MODID = "flying_enchant";
+    /** 临时诊断开关：定位线上状态同步问题用，问题闭环后关闭。 */
+    static final boolean DEBUG_DASH = true;
+    private static final Logger LOGGER = LogUtils.getLogger();
     /** 飞翔附魔 id 沿用旧命名空间（存档兼容：已附魔的物品不受拆分影响）。 */
     public static final ResourceKey<Enchantment> FLYING_KEY =
         ResourceKey.create(Registries.ENCHANTMENT, Identifier.fromNamespaceAndPath("xingyue", "flying"));
@@ -283,28 +289,32 @@ public final class FlyingEnchantMod {
         DASH_USED.add(uuid);
     }
 
-    // 服务端：效果版突进（疾跑 + 持有飞翔效果）；与附魔版独立，不校验跃起窗口/附魔/tag
+    // 服务端：效果版突进（疾跑起跳 / 空中接续）；与附魔版独立，不校验跃起窗口/附魔/tag。
+    // 不校验 isSprinting：疾跑标志是客户端单向同步的镜像，moved-wrongly 回退/碰撞会让其
+    // 脱同步（客户端视觉仍在疾跑而服务端标志为 false），硬校验会导致突进间歇性失效。
+    // 疾跑门槛由客户端预筛执行；服务端保留安全门：效果持有、gamerule、冷却、饱食度。
     private static void handleEffectDashRequest(Player basePlayer) {
         if (!(basePlayer instanceof ServerPlayer player) || !(player.level() instanceof ServerLevel level)) {
             return;
         }
         if (!player.hasEffect(FLYING_EFFECT)) {
-            return; // 必须持有飞翔状态效果
-        }
-        if (!player.isSprinting()) {
-            return; // 必须处于疾跑状态
+            reject(player, "no flying effect");
+            return;
         }
         if (!level.getGameRules().get(FLYING_DASH_ENABLED.value())) {
-            return; // 服务器管理员禁用了飞翔突进
+            reject(player, "gamerule flying_dash disabled");
+            return;
         }
         UUID uuid = player.getUUID();
         long now = level.getGameTime();
         Long until = EFFECT_DASH_COOLDOWN_UNTIL.get(uuid);
         if (until != null && now < until) {
-            return; // 冷却中（每玩家 10 刻）
+            reject(player, "cooldown (" + (until - now) + " ticks left)");
+            return;
         }
         if (!player.hasInfiniteMaterials() && player.getFoodData().getFoodLevel() <= SPRINT_FOOD_THRESHOLD) {
-            return; // 饱食度不足（与疾跑同门槛）
+            reject(player, "food below sprint threshold");
+            return;
         }
 
         // 前上方突进：视线水平方向 × 固定速度，垂直分量整体重置为上抬（继承附魔版"发动时重置下坠速度"特性）
@@ -315,7 +325,9 @@ public final class FlyingEnchantMod {
             : Vec3.directionFromRotation(0.0F, player.getYRot());
         player.setDeltaMovement(player.getDeltaMovement().add(horizontal.scale(EFFECT_DASH_SPEED))
             .with(Direction.Axis.Y, EFFECT_DASH_UP));
-        player.applyPostImpulseGraceTime(10);
+        // 宽限须覆盖整个飞行段（上2格+下落 ≈14 刻）直至落地，否则宽限外的滞空段会
+        // 触发服务端 moved-wrongly 校验（残差 >0.25 格）→ 瞬移回退 + 双方速度清零
+        player.applyPostImpulseGraceTime(20);
         player.connection.send(new ClientboundSetEntityMotionPacket(player));
 
         // 特效：脚下少量白色风爆粒子 + 风爆音效（与附魔版同款）
@@ -334,6 +346,16 @@ public final class FlyingEnchantMod {
                 Math.max(0, player.getFoodData().getFoodLevel() - EFFECT_DASH_HUNGER_COST));
         }
         EFFECT_DASH_COOLDOWN_UNTIL.put(uuid, now + EFFECT_DASH_COOLDOWN_TICKS);
+        if (DEBUG_DASH) {
+            LOGGER.info("[FlyingEffectDash] dash executed for {} (sprint={}, ground={})",
+                player.getName().getString(), player.isSprinting(), player.onGround());
+        }
+    }
+
+    private static void reject(ServerPlayer player, String reason) {
+        if (DEBUG_DASH) {
+            LOGGER.info("[FlyingEffectDash] rejected for {}: {}", player.getName().getString(), reason);
+        }
     }
 
     private static Holder<Enchantment> enchantmentHolder(ServerPlayer player, ResourceKey<Enchantment> key) {
