@@ -32,10 +32,12 @@ description='''
     ordering="NONE"
     side="BOTH"
 
-# 星月模组（可选）：同时安装时星月也可获得"飞翔"附魔与空中突进
+# 星月模组（可选）：同时安装时星月也可获得"飞翔"附魔与空中突进。
+# 区间从下限放开：Maven 版本序把 0.1.0-beta 视为小于 0.1.0，写死下限会让任何
+# 带预发布后缀的星月版本被判不满足；兼容契约实际由共享 item tag 承担，区间从宽。
 [[dependencies.${mod_id}]]
     modId="xingyue"
     type="optional"
-    versionRange="[0.1.0,)"
+    versionRange="[0,)"
     ordering="NONE"
     side="BOTH"
