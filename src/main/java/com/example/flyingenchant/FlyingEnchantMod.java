@@ -186,6 +186,22 @@ public final class FlyingEnchantMod {
         }
     }
 
+    /**
+     * 软依赖 API：供其他模组（如星月）显式宣告"该玩家刚完成一次跃起"，直接开放其突进窗口
+     * （窗口持续到落地，与速度反转检测的窗口语义一致，覆盖整个跃起过程）。
+     * 速度反转检测依赖每刻采样的先后顺序，对一些发射时机（如蓄力释放瞬间玩家正在上升）
+     * 不可靠——由发射方主动宣告则 deterministically 开窗。
+     * 调用方经反射查找本类（{@code Class.forName}），未安装飞翔时调用方静默跳过，
+     * 不构成编译依赖。
+     */
+    public static void notifyLaunch(Player player) {
+        if (player.level() instanceof ServerLevel) {
+            UUID uuid = player.getUUID();
+            LAUNCHED.add(uuid);
+            DASH_USED.remove(uuid);
+        }
+    }
+
     // 游戏总线：每刻采样垂直速度做跃起检测 + 落地关窗
     static void onPlayerTick(PlayerTickEvent.Post event) {
         Player player = event.getEntity();
