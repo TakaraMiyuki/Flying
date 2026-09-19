@@ -271,6 +271,14 @@ public final class FlyingEnchantMod {
                 dashByEnchant(player, level, uuid, weapon, flyingLevel);
                 return;
             }
+            if (DEBUG_DASH) {
+                LOGGER.info("[FlyingDash] enchant channel skipped for {}: weapon={} flyingLevel={} inTag={}",
+                    player.getName().getString(), weapon.getItem(), flyingLevel, weapon.is(FLYING_ENCHANTABLE));
+            }
+        } else if (DEBUG_DASH) {
+            // 落到效果通道前的诊断：说明附魔通道为何未接管（窗口未开/本次跃起已用）
+            LOGGER.info("[FlyingDash] enchant channel not taken for {}: onGround={} launched={} dashUsed={}",
+                player.getName().getString(), player.onGround(), LAUNCHED.contains(uuid), DASH_USED.contains(uuid));
         }
 
         // 优先级 2：效果通道——疾跑（客户端标志）+ 持有效果 + 10 刻冷却；空中不限次数
@@ -291,11 +299,13 @@ public final class FlyingEnchantMod {
         dashByEffect(player, level, uuid, now);
     }
 
-    // 附魔通道：等级速度前上方突进，垂直整体重置（否则下坠负速度会抵消突进）；消耗 1 耐久 + 2 饥饿；本次跃起标记已用
+    // 附魔通道：等级速度前上方突进；垂直分量取"当前速度与突进上抬的较大值"——
+    // 下坠时重置为上抬（下坠负速度不得抵消突进），上升时不截断跃起弧线
+    // （蓄力跃起/风爆弹跳的上升段发动飞翔，跳跃高度不受损）。消耗 1 耐久 + 2 饥饿；本次跃起标记已用
     private static void dashByEnchant(ServerPlayer player, ServerLevel level, UUID uuid, ItemStack weapon, int flyingLevel) {
         Vec3 horizontal = horizontalLook(player);
         double speed = DASH_SPEED_BASE + DASH_SPEED_PER_LEVEL * (flyingLevel - 1);
-        double up = DASH_UP_BASE + DASH_UP_PER_LEVEL * (flyingLevel - 1);
+        double up = Math.max(player.getDeltaMovement().y, DASH_UP_BASE + DASH_UP_PER_LEVEL * (flyingLevel - 1));
         player.setDeltaMovement(player.getDeltaMovement().add(horizontal.scale(speed)).with(Direction.Axis.Y, up));
         player.applyPostImpulseGraceTime(10);
         player.connection.send(new ClientboundSetEntityMotionPacket(player));
@@ -310,14 +320,14 @@ public final class FlyingEnchantMod {
         }
     }
 
-    // 效果通道：固定速度前上方突进，垂直整体重置（继承附魔版"发动时重置下坠速度"特性）；
+    // 效果通道：固定速度前上方突进；垂直分量同附魔通道取较大值（下坠重置、上升不截断）；
     // 消耗 0.5 饥饿（半点累积器）；10 刻冷却。等级（amplifier）缩放突进距离：
     // 一级 ≈水平2格/上2格，二级 ≈水平5格/上3格，更高等级线性外推。
     private static void dashByEffect(ServerPlayer player, ServerLevel level, UUID uuid, long now) {
         MobEffectInstance effect = player.getEffect(FLYING_EFFECT);
         int amplifier = effect == null ? 0 : effect.getAmplifier();
         double speed = EFFECT_DASH_SPEED_BASE + EFFECT_DASH_SPEED_PER_LEVEL * amplifier;
-        double up = EFFECT_DASH_UP_BASE + EFFECT_DASH_UP_PER_LEVEL * amplifier;
+        double up = Math.max(player.getDeltaMovement().y, EFFECT_DASH_UP_BASE + EFFECT_DASH_UP_PER_LEVEL * amplifier);
         Vec3 horizontal = horizontalLook(player);
         player.setDeltaMovement(player.getDeltaMovement().add(horizontal.scale(speed))
             .with(Direction.Axis.Y, up));
