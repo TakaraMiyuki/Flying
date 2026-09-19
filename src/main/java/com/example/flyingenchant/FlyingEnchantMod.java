@@ -33,12 +33,14 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
+import net.minecraft.world.level.Explosion;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
@@ -46,6 +48,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.AnvilUpdateEvent;
 import net.neoforged.neoforge.event.entity.living.MobEffectEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.level.ExplosionEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
@@ -163,11 +166,13 @@ public final class FlyingEnchantMod {
         MOB_EFFECTS.register(modEventBus);
         GAME_RULES.register(modEventBus);
         modEventBus.addListener(this::onRegisterPayloads);
-        // 游戏总线：跃起检测（突进窗口）、铁砧风爆前置否决、退出清理、非玩家免疫飞翔效果
+        // 游戏总线：跃起检测（突进窗口）、铁砧风爆前置否决、退出清理、非玩家免疫飞翔效果、
+        // 风爆类爆炸弹起玩家时确定性开窗
         NeoForge.EVENT_BUS.addListener(FlyingEnchantMod::onPlayerTick);
         NeoForge.EVENT_BUS.addListener(FlyingEnchantMod::onAnvilUpdate);
         NeoForge.EVENT_BUS.addListener(FlyingEnchantMod::onPlayerLoggedOut);
         NeoForge.EVENT_BUS.addListener(FlyingEnchantMod::onEffectApplicable);
+        NeoForge.EVENT_BUS.addListener(FlyingEnchantMod::onExplosionDetonate);
     }
 
     // mod bus：注册服务端 payload 处理器
@@ -196,10 +201,32 @@ public final class FlyingEnchantMod {
      */
     public static void notifyLaunch(Player player) {
         if (player.level() instanceof ServerLevel) {
-            UUID uuid = player.getUUID();
-            LAUNCHED.add(uuid);
-            DASH_USED.remove(uuid);
+            openDashWindow(player);
         }
+    }
+
+    // 游戏总线：风爆类爆炸（block_interaction=trigger：风爆附魔的弹跳、风弹等）波及到的玩家
+    // 确定性开放突进窗口。爆炸冲击的服务端/客户端速度演化并不同步，速度反转采样对爆炸弹跳
+    // 完全不可靠（实测 launched 恒为 false）——爆炸事件是确定性信号，窗口持续到落地。
+    static void onExplosionDetonate(ExplosionEvent.Detonate event) {
+        if (!(event.getLevel() instanceof ServerLevel)) {
+            return;
+        }
+        if (event.getExplosion().getBlockInteraction() != Explosion.BlockInteraction.TRIGGER_BLOCK) {
+            return;
+        }
+        for (Entity entity : event.getAffectedEntities()) {
+            if (entity instanceof Player player) {
+                openDashWindow(player);
+            }
+        }
+    }
+
+    // 确定性开窗（notifyLaunch 与爆炸弹跳共用）：由 onPlayerTick 的落地分支关闭，覆盖整个跃起过程
+    private static void openDashWindow(Player player) {
+        UUID uuid = player.getUUID();
+        LAUNCHED.add(uuid);
+        DASH_USED.remove(uuid);
     }
 
     // 游戏总线：每刻采样垂直速度做跃起检测 + 落地关窗
